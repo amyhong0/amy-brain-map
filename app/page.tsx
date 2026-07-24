@@ -103,6 +103,29 @@ export default function Home() {
     return token || 'Untitled';
   };
 
+  // 임베딩 코사인 유사도 계산 함수
+  function cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      na += a[i] * a[i];
+      nb += b[i] * b[i];
+    }
+    const denom = Math.sqrt(na) * Math.sqrt(nb);
+    return denom === 0 ? 0 : dot / denom;
+  }
+
+  function parseEmbeddings(meta: any): number[][] {
+    try {
+      const raw = meta?.kwEmbeddings;
+      if (!raw || typeof raw !== 'string') return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.every((e: any) => Array.isArray(e) && e.length > 0)) return parsed;
+      return [];
+    } catch { return []; }
+  }
+
   const rebuildGraph = useCallback((docs: KnowledgeDoc[]) => {
     const nodes = docs.map((doc, idx) => ({
       id: doc.id,
@@ -118,27 +141,47 @@ export default function Home() {
           createdAt: doc.createdAt,
           url: doc.url,
           content: doc.content,
+          kwEmbeddings: (doc as any).metadata?.kwEmbeddings,
         },
       },
     }));
     const edges: Edge[] = [];
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
-        const keywordsA = [...(nodes[i].data?.metadata as any)?.tags || []].map(s => (s || '').toString().trim().toLowerCase());
-        const keywordsB = [...(nodes[j].data?.metadata as any)?.tags || []].map(s => (s || '').toString().trim().toLowerCase());
-        const pairs = new Set<string>();
+        const metaA = nodes[i].data?.metadata as any;
+        const metaB = nodes[j].data?.metadata as any;
+
+        const embA = parseEmbeddings(metaA);
+        const embB = parseEmbeddings(metaB);
+
         let strength = 0;
-        for (const kA of keywordsA) {
-          for (const kB of keywordsB) {
-            if (!kA || !kB) continue;
-            const key = [kA, kB].sort().join('||');
-            if (pairs.has(key)) continue;
-            pairs.add(key);
-            if (kA === kB || (kA.length > 1 && kB.length > 1 && (kB.includes(kA) || kA.includes(kB)))) {
-              strength++;
+        if (embA.length > 0 && embB.length > 0) {
+          for (const vA of embA) {
+            for (const vB of embB) {
+              const sim = cosineSimilarity(vA, vB);
+              if (sim > 0.7) strength++;
             }
           }
         }
+
+        // 벡터가 없으면 substring fallback
+        if (strength === 0) {
+          const keywordsA = [...(metaA?.tags || [])];
+          const keywordsB = [...(metaB?.tags || [])];
+          const pairs = new Set<string>();
+          for (const kA of keywordsA) {
+            for (const kB of keywordsB) {
+              if (!kA || !kB) continue;
+              const key = [kA, kB].sort().join('||');
+              if (pairs.has(key)) continue;
+              pairs.add(key);
+              if (kA === kB || (kA.length > 1 && kB.length > 1 && (kB.includes(kA) || kA.includes(kB)))) {
+                strength++;
+              }
+            }
+          }
+        }
+
         if (strength >= 1) {
           edges.push({
             id: `edge-${i}-${j}`,

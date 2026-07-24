@@ -112,6 +112,47 @@ async function callNvidiaLLM(prompt: string, systemPrompt: string): Promise<stri
   }
 }
 
+async function callNvidiaEmbeddings(texts: string[]): Promise<number[][] | null> {
+  try {
+    const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'nvidia/nv-embed-qa-4',
+        input: texts,
+        input_type: 'query',
+      }),
+    });
+
+    if (!apiResponse.ok) {
+      const errText = await apiResponse.text();
+      console.error(`NVIDIA Embedding API error (${apiResponse.status}):`, errText);
+      return null;
+    }
+
+    const data = await apiResponse.json();
+    return data.data?.map((item: any) => item.embedding) || null;
+  } catch (error) {
+    console.error('NVIDIA Embedding API call failed:', error);
+    return null;
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
 async function fetchWebContent(url: string): Promise<{ title: string; content: string; keywords: string[]; topic?: string }> {
   try {
     const response = await fetch(url, {
@@ -295,19 +336,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: title, type' }, { status: 400 });
     }
 
-      const doc: KnowledgeDoc = {
-        id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        title,
-        type: type as 'pdf' | 'web' | 'image',
-        tags: tags || [],
-        createdAt: new Date().toISOString(),
-        summary,
-        content,
-        url,
-        metadata: {
-          topic: typeof tags === 'string' ? tags : (tags && (tags as any).topic) || (Array.isArray(tags) ? tags[0] : undefined) || title.split(' ')[0],
-        }
-      };
+    // 키워드 임베딩 계산
+    const kwList: string[] = (Array.isArray(tags) ? tags : [title.split(' ')[0]]).filter((t: string) => t && t !== 'web');
+    let kwEmbeddings: number[][] | null = null;
+    if (kwList.length > 0) {
+      try {
+        kwEmbeddings = await callNvidiaEmbeddings(kwList);
+      } catch (e) {
+        console.error('Embedding call failed, skipping:', e);
+      }
+    }
+
+    const doc: KnowledgeDoc = {
+      id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      title,
+      type: type as 'pdf' | 'web' | 'image',
+      tags: tags || [],
+      createdAt: new Date().toISOString(),
+      summary,
+      content,
+      url,
+      metadata: {
+        topic: typeof tags === 'string' ? tags : (tags && (tags as any).topic) || (Array.isArray(tags) ? tags[0] : undefined) || title.split(' ')[0],
+        kwEmbeddings: kwEmbeddings ? JSON.stringify(kwEmbeddings) : undefined,
+      }
+    };
 
     const filePath = await saveKnowledgeDoc(doc);
     return NextResponse.json({ success: true, document: doc, filePath });

@@ -82,7 +82,8 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
       const response = await fetch('/api/knowledge');
       if (response.ok) {
         const data = await response.json();
-        setKnowledgeDocs(data.documents || []);
+        const sorted = (data.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setKnowledgeDocs(sorted);
       }
     } catch (error) {
       console.error('Failed to load knowledge docs:', error);
@@ -98,7 +99,7 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
       });
       if (response.ok) {
         const data = await response.json();
-        const updated = [data.document, ...knowledgeDocs];
+        const updated = [data.document, ...knowledgeDocs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setKnowledgeDocs(updated);
         onChange?.(updated);
         return true;
@@ -152,7 +153,7 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
     setIsProcessing(true);
     const newDoc: KnowledgeDoc = {
       id: `doc-${Date.now()}`, title: '', type: 'web', tags: [],
-      createdAt: new Date().toISOString().split('T')[0], url: urlInput,
+      createdAt: new Date().toISOString(), url: urlInput,
     };
     try {
       const success = await saveKnowledgeDocAPI(newDoc);

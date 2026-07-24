@@ -295,19 +295,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: title, type' }, { status: 400 });
     }
 
-    const doc: KnowledgeDoc = {
-      id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title,
-      type: type as 'pdf' | 'web' | 'image',
-      tags: tags || [],
-      createdAt: new Date().toISOString().split('T')[0],
-      summary,
-      content,
-      url,
-      metadata: {
-        topic: typeof tags === 'string' ? tags : (tags && (tags as any).topic) || (Array.isArray(tags) ? tags[0] : undefined) || title.split(' ')[0],
-      }
-    };
+      const doc: KnowledgeDoc = {
+        id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        title,
+        type: type as 'pdf' | 'web' | 'image',
+        tags: tags || [],
+        createdAt: new Date().toISOString(),
+        summary,
+        content,
+        url,
+        metadata: {
+          topic: typeof tags === 'string' ? tags : (tags && (tags as any).topic) || (Array.isArray(tags) ? tags[0] : undefined) || title.split(' ')[0],
+        }
+      };
 
     const filePath = await saveKnowledgeDoc(doc);
     return NextResponse.json({ success: true, document: doc, filePath });

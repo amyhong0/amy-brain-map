@@ -211,6 +211,10 @@ ${trimmedContent}
           .replace(/이 시각 핫클릭 이슈[\s\S]*/g, '')
           .trim();
 
+        if (rawContent.length > 4000 && content.length < rawContent.length * 0.5) {
+          content += '\n\n... (본문이 너무 길어서 잘렸습니다. 전체 내용은 원문 링크에서 확인하세요.)';
+        }
+
         return { title, content, keywords, topic };
       } catch (parseError) {
         console.error('LLM JSON parse error, trying regex fallback:', parseError);

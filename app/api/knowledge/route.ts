@@ -182,12 +182,14 @@ ${rawContent.substring(0, 12000)}
 
     if (llmResult) {
       try {
+        console.log('LLM raw response:', llmResult);
         // JSON 추출 시도 (마크다운 코드 블록 처리)
         let jsonStr = llmResult;
         const jsonMatch = llmResult.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (jsonMatch) {
           jsonStr = jsonMatch[1].trim();
         }
+        console.log('LLM raw topic payload:', jsonStr);
         const parsed = JSON.parse(jsonStr);
         
         const title = parsed.title?.trim() || rawTitle.trim();

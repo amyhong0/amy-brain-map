@@ -68,10 +68,10 @@ function EntityNode({ data, selected }: NodeProps) {
       <motion.div
         className="rounded-full flex items-center justify-center"
         style={{
-          width: 36,
-          height: 36,
+          width: 18,
+          height: 18,
           background: `radial-gradient(circle at 35% 35%, ${color}cc, ${color}66)`,
-          boxShadow: `0 0 12px ${color}88`,
+          boxShadow: `0 0 8px ${color}88`,
           cursor: 'pointer',
         }}
         animate={selected ? { scale: [1, 1.06, 1] } : {}}
@@ -291,7 +291,7 @@ function KnowledgeDetailModal({ node, onClose }: { node: Node; onClose: () => vo
           <div className="mb-3">
             <span className="text-[10px] text-slate-500 mb-1 block">태그</span>
             <div className="flex flex-wrap gap-1">
-              {metadata.tags.map((tag, i) => (
+              {(metadata.tags as string[]).map((tag, i) => (
                 <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/30">
                   #{String(tag).replace(/^#/, '')}
                 </span>

@@ -124,10 +124,21 @@ export default function Home() {
     const edges: Edge[] = [];
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
-        const keywordsA = new Set([...(nodes[i].data?.metadata as any)?.tags || []]);
-        const keywordsB = new Set([...(nodes[j].data?.metadata as any)?.tags || []]);
-        const shared = [...keywordsA].filter((k: string) => keywordsB.has(k));
-        const strength = shared.length;
+        const keywordsA = [...(nodes[i].data?.metadata as any)?.tags || []].map(s => (s || '').toString().trim().toLowerCase());
+        const keywordsB = [...(nodes[j].data?.metadata as any)?.tags || []].map(s => (s || '').toString().trim().toLowerCase());
+        const pairs = new Set<string>();
+        let strength = 0;
+        for (const kA of keywordsA) {
+          for (const kB of keywordsB) {
+            if (!kA || !kB) continue;
+            const key = [kA, kB].sort().join('||');
+            if (pairs.has(key)) continue;
+            pairs.add(key);
+            if (kA === kB || (kA.length > 1 && kB.length > 1 && (kB.includes(kA) || kA.includes(kB)))) {
+              strength++;
+            }
+          }
+        }
         if (strength >= 1) {
           edges.push({
             id: `edge-${i}-${j}`,

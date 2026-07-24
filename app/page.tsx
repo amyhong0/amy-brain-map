@@ -96,16 +96,23 @@ export default function Home() {
     return token || 'topic';
   };
 
+  const toLabel = (doc: KnowledgeDoc) => {
+    const kw = Array.isArray(doc.tags) ? doc.tags.find((t) => t && t !== 'web') : undefined;
+    if (kw) return kw;
+    const token = (doc.title || '').split(' ')[0];
+    return token || 'Untitled';
+  };
+
   const rebuildGraph = useCallback((docs: KnowledgeDoc[]) => {
     const nodes = docs.map((doc, idx) => ({
       id: doc.id,
       position: { x: (idx % 5) * 180 - 360, y: Math.floor(idx / 5) * 120 - 120 },
       data: {
-        label: doc.title || 'Untitled',
+        label: toLabel(doc),
         type: doc.type,
         metadata: {
           title: doc.title,
-          entityType: toTopic(doc),
+          summary: doc.summary || doc.content,
           topic: toTopic(doc),
           tags: doc.tags,
           createdAt: doc.createdAt,
@@ -117,17 +124,17 @@ export default function Home() {
     const edges: Edge[] = [];
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
-        const tagsA = (nodes[i].data?.metadata as any)?.tags || [];
-        const tagsB = (nodes[j].data?.metadata as any)?.tags || [];
-        const sharedTags = tagsA.filter((tag: string) => tagsB.includes(tag));
-        const strength = sharedTags.length;
-        if (strength >= 2) {
+        const keywordsA = new Set([...(nodes[i].data?.metadata as any)?.tags || []]);
+        const keywordsB = new Set([...(nodes[j].data?.metadata as any)?.tags || []]);
+        const shared = [...keywordsA].filter((k: string) => keywordsB.has(k));
+        const strength = shared.length;
+        if (strength >= 1) {
           edges.push({
             id: `edge-${i}-${j}`,
             source: nodes[i].id,
             target: nodes[j].id,
             data: { strength },
-            style: { stroke: `rgba(139, 92, 246, ${0.3 + strength * 0.1})`, strokeWidth: 0.5 + strength * 0.2 },
+            style: { stroke: `rgba(139, 92, 246, ${0.3 + strength * 0.15})`, strokeWidth: 0.6 + strength * 0.25 },
             type: 'straight',
           });
         }

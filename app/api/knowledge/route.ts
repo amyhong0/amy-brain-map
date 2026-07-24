@@ -24,11 +24,10 @@ function cleanTextFallback(text: string): { title: string; content: string; keyw
       return true;
     });
 
-  const content = cleaned;
-  const allText = cleaned;
+  const content = lines.join('\n\n');
 
   // 하드코딩된 키워드 제거 - 실제 텍스트에서 빈도 기반으로만 추출
-  const keywords = extractKeywordsFromContent(allText);
+  const keywords = extractKeywordsFromContent(cleaned);
 
   return {
     title: lines[0]?.substring(0, 50) || '웹 문서',

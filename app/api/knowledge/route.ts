@@ -62,6 +62,22 @@ function extractKeywordsFromContent(text: string): string[] {
     .map(([word]) => word);
 }
 
+function normalizeKnowledgeTopic(topic?: string, keywords: string[] = []): string {
+  const STOP = new Set([
+    'meta','google','apple','openai','chatgpt','gpt','nvidia','samsung','microsoft','네이버','카카오','sk','lg','현대','기아','spacex','nasa','제네시스','genesis'
+  ]);
+  const tech = ['ai','artificial intelligence','반도체','자율주행','로봇','양자컴퓨팅','우주','에너지','신약개발','핵융합','바이오','기후변화','머신러닝','딥러닝'];
+  const t = (topic || '').trim();
+  if (!t) return keywords[0] || 'web';
+  const lower = t.toLowerCase();
+  const token = lower.split(/[\s_\-]+/)[0];
+  if (STOP.has(token)) {
+    const kw = keywords.find(k => tech.some(x => k.toLowerCase().includes(x)));
+    return kw || keywords[0] || 'web';
+  }
+  return t;
+}
+
 async function callNvidiaLLM(prompt: string, systemPrompt: string): Promise<string | null> {
   try {
     const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
@@ -151,7 +167,7 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
   "title": "50자 이내의 핵심 제목 (언론사명, 사이트명 제외)",
   "content": "800자 이내의 핵심 요약 (기자정보, 저작권문구, 광고, 네비게이션 등 불필요한 내용 제외)",
   "keywords": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5"],
-  "topic": "이 문서에서 다루는 핵심 기술 또는 연구 분야를 1~3단어로 선택하세요. 제목이나 본문에 프로젝트명(예: 제네시스 미션), 회사명, 서비스명이 더 눈에 띄더라도, 그것이 구현되는 근본 기술 분야를 선택해야 합니다. 예: 'AI로 과학 연구를 바꾼다'는 글의 topic은 'AI'입니다. '자율주행 기술 리포트'는 '자율주행'입니다. 절대 프로젝트명이나 제품명을 topic으로 사용하지 마세요."
+  "topic": "문서의 핵심 기술/연구 분야를 1~3단어로 선택. 제목에 프로젝트명(예: 제네시스 미션)과 기술 키워드(예: AI)가 같이 있으면 절대 프로젝트명을 선택하지 말고 반드시 기술 분야(AI 등)를 선택. 회사명·서비스명·제품명·프로젝트명은 topic으로 사용 금지."
 }`;
 
     const userPrompt = `URL: ${url}
@@ -177,8 +193,8 @@ ${rawContent.substring(0, 12000)}
         const title = parsed.title?.trim() || rawTitle.trim();
         let content = parsed.content?.trim() || rawContent;
         let keywords: string[] = parsed.keywords || [];
-        const topic = parsed.topic?.trim() || keywords[0];
-        
+        const topic = normalizeKnowledgeTopic(parsed.topic?.trim(), keywords) || keywords[0] || 'web';
+
         if (keywords.length === 0) keywords = extractKeywordsFromContent(content);
 
         content = content

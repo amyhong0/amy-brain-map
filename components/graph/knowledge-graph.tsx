@@ -42,16 +42,28 @@ function resolveColor(type?: string, title = '', index = 0): string {
 
 // ── Entity Node ───────────────────────────────────────────────────
 function EntityNode({ data, selected }: NodeProps) {
-  const topic = ((data?.metadata as any)?.topic || data?.label || 'default') + '';
-  const name = ((data?.metadata as { name?: string })?.name || data?.label || '') + '';
-  const title = ((data?.metadata as any)?.title || name || topic || '') + '';
+  const title = ((data?.metadata as any)?.title || data?.label || 'Untitled') + '';
   const summary = ((data?.metadata as any)?.summary || '') + '';
-  const color = resolveColor(topic, name, 0);
+  const color = resolveColor(((data?.metadata as any)?.topic || data?.type || 'default') + '', title, 0);
+  const shortSummary = summary.length > 24 ? summary.slice(0, 24) + '…' : summary;
 
   return (
     <div className="relative flex items-center justify-center">
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+
+      <div
+        className="absolute whitespace-nowrap text-[8px] font-semibold tracking-wide pointer-events-none"
+        style={{
+          bottom: 'calc(100% + 3px)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          color: selected ? '#f1f5f9' : '#cbd5e1',
+          textShadow: '0 0 6px rgba(0,0,0,0.95)',
+        }}
+      >
+        {shortSummary || title}
+      </div>
 
       <motion.div
         className="rounded-full flex items-center justify-center"
@@ -64,7 +76,7 @@ function EntityNode({ data, selected }: NodeProps) {
         }}
         animate={selected ? { scale: [1, 1.06, 1] } : {}}
         transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-        title={`${title}\n${summary ? summary.substring(0, 120) : ''}`.trim()}
+        title={title}
       />
     </div>
   );

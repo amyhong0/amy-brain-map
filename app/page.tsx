@@ -51,8 +51,6 @@ export default function Home() {
   const [agents, setAgents] = useState<AgentState[]>(BASE_AGENTS);
   const [graphNodes, setGraphNodes] = useState<Node[]>([]);
   const [graphEdges, setGraphEdges] = useState<Edge[]>([]);
-  const [selectedGraphNode, setSelectedGraphNode] = useState<Node | null>(null);
-  const [showFullGraphContent, setShowFullGraphContent] = useState(false);
   const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDoc[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -89,13 +87,26 @@ export default function Home() {
     url?: string;
   };
 
+  const BROADER_TOPIC_MAP: Record<string, string> = {
+    openai: 'AI', chatgpt: 'AI', gpt: 'AI', nvidia: 'AI', ai: 'AI', 'artificial intelligence': 'AI', 머신러닝: 'AI', 딥러닝: 'AI', 'deep learning': 'AI',
+    spacex: 'Space', nasa: 'Space', 우주: 'Space', 제네시스: 'Space', genesis: 'Space',
+  };
+  const normalizeTopic = (topic?: string) => {
+    if (!topic) return 'General';
+    const lower = topic.toLowerCase();
+    if (BROADER_TOPIC_MAP[lower]) return BROADER_TOPIC_MAP[lower];
+    for (const [key, value] of Object.entries(BROADER_TOPIC_MAP)) {
+      if (lower.includes(key)) return value;
+    }
+    return topic;
+  };
   const toTopic = (doc: KnowledgeDoc) => {
     const raw = (doc as any).metadata?.topic;
-    if (raw && raw !== 'web') return raw;
+    if (raw && raw !== 'web') return normalizeTopic(raw);
     const fromTags = Array.isArray(doc.tags) ? doc.tags.find((t) => t && t !== 'web') : undefined;
-    if (fromTags) return fromTags;
+    if (fromTags) return normalizeTopic(fromTags);
     const token = (doc.title || '').split(' ')[0];
-    return token || 'topic';
+    return normalizeTopic(token || 'topic');
   };
 
   const rebuildGraph = useCallback((docs: KnowledgeDoc[]) => {
@@ -192,6 +203,7 @@ export default function Home() {
       if (!response.ok) throw new Error('AI 응답을 가져오는데 실패했습니다');
       const data = await response.json();
       const replyContent = data.response;
+      const cleanedReply = replyContent.replace(/\[참조:\s*[^\]]+\]/g, '').trim();
       const citedTitles: string[] = [];
       const citeRegex = /\[참조:\s*([^\]]+)\]/g;
       let citeMatch;
@@ -203,7 +215,7 @@ export default function Home() {
       addMessage({
         id: `ai-${Date.now()}`,
         role: 'assistant',
-        content: replyContent,
+        content: cleanedReply,
         timestamp: new Date(),
         documents: matchedDocs.map((doc: any) => ({ id: doc.id, title: doc.title, content: doc.content, tags: doc.tags || [], createdAt: doc.createdAt, url: doc.url })),
       });
@@ -316,48 +328,7 @@ export default function Home() {
           <div className="glass-card p-6">
             <div className="section-title mb-5">지식 그래프</div>
             <div className="relative">
-              <KnowledgeGraph nodes={graphNodes} edges={graphEdges} onNodeClick={(node) => { setSelectedGraphNode(node); setShowFullGraphContent(true); }} />
-              {selectedGraphNode && showFullGraphContent && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => { setShowFullGraphContent(false); setSelectedGraphNode(null); }} onKeyDown={(e) => { if (e.key === 'Escape') { setShowFullGraphContent(false); setSelectedGraphNode(null); } }}>
-                  <div className="max-w-md w-full max-h-[80vh] overflow-y-auto rounded-xl p-5" style={{ background: 'linear-gradient(135deg, rgba(30, 15, 50, 0.95), rgba(20, 10, 40, 0.95))', border: '1px solid rgba(139, 92, 246, 0.3)' }} onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center text-lg">📄</div>
-                      <div>
-                        <h3 className="text-white font-bold">{((selectedGraphNode.data?.metadata as { title?: string })?.title) || (selectedGraphNode.data?.label as string) || 'Untitled'}</h3>
-                        <span className="text-[10px] text-purple-300">{((selectedGraphNode.data?.metadata as { type?: string })?.type) || '문서'}</span>
-                      </div>
-                    </div>
-                    {(() => {
-                      const tags = (selectedGraphNode.data?.metadata as { tags?: string[] })?.tags;
-                      return tags && tags.length > 0 && (
-                        <div className="mb-3">
-                          <span className="text-[10px] text-gray-400 mb-1 block">태그:</span>
-                          <div className="flex flex-wrap gap-1">
-                            {tags.map((tag, i) => (<span key={i} className="text-[10px] px-2 py-0.5 rounded bg-purple-500/30 text-purple-200">#{tag}</span>))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    {(selectedGraphNode.data?.metadata as { createdAt?: string })?.createdAt && (<div className="text-[10px] text-gray-400 mb-2">생성일: {(selectedGraphNode.data?.metadata as { createdAt?: string }).createdAt}</div>)}
-                    {(selectedGraphNode.data?.metadata as { url?: string })?.url && (<div className="text-[10px] text-blue-400 mb-2 break-all"><a href={(selectedGraphNode.data?.metadata as { url?: string }).url} target="_blank" rel="noopener noreferrer">🔗 {(selectedGraphNode.data?.metadata as { url?: string }).url}</a></div>)}
-                    <div className="text-[11px] text-gray-300 mt-2 pt-2 border-t border-white/10 whitespace-pre-wrap">
-                      {(() => {
-                        const raw = (selectedGraphNode.data?.metadata as any)?.content;
-                        if (typeof raw === 'string') {
-                          return (
-                            <>
-                              <div className="text-[10px] text-gray-400 mb-1">본문</div>
-                              <div className="whitespace-pre-wrap text-gray-300">{raw}</div>
-                            </>
-                          );
-                        }
-                        return ((selectedGraphNode.data?.metadata as { title?: string })?.title) || '지식';
-                      })()}
-                    </div>
-                    <button onClick={() => { setShowFullGraphContent(false); setSelectedGraphNode(null); }} className="mt-4 px-4 py-1.5 rounded-lg bg-purple-600/30 text-white text-[11px] hover:bg-purple-600/50">닫기</button>
-                  </div>
-                </div>
-              )}
+              <KnowledgeGraph nodes={graphNodes} edges={graphEdges} onNodeClick={(node) => { /* handled inside component */ }} />
             </div>
           </div>
         )}

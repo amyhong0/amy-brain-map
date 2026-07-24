@@ -44,6 +44,7 @@ function resolveColor(type?: string, title = '', index = 0): string {
 function EntityNode({ data, selected }: NodeProps) {
   const topic = ((data?.metadata as any)?.topic || data?.label || 'default') + '';
   const name = ((data?.metadata as { name?: string })?.name || data?.label || '') + '';
+  const topicLabel = ((data?.metadata as any)?.title || name || topic || '') + '';
   const color = resolveColor(topic, name, 0);
   const label = topic.length > 6 ? topic.slice(0, 6) + '…' : topic;
 
@@ -76,7 +77,7 @@ function EntityNode({ data, selected }: NodeProps) {
         }}
         animate={selected ? { scale: [1, 1.06, 1] } : {}}
         transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-        title={label}
+        title={topicLabel || label}
       />
     </div>
   );

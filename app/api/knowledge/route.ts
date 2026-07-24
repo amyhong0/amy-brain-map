@@ -151,7 +151,7 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
   "title": "50자 이내의 핵심 제목 (언론사명, 사이트명 제외)",
   "content": "800자 이내의 핵심 요약 (기자정보, 저작권문구, 광고, 네비게이션 등 불필요한 내용 제외)",
   "keywords": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5"],
-  "topic": "이 문서의 주제 또는 카테고리를 1~3단어로 규정합니다. 절대 회사명(예: Meta, Google, Apple, OpenAI, Samsung, Microsoft, 네이버, 카카오, SK, LG, 현대, 기아 등)을 사용하지 마세요."
+      "topic": "이 문서의 주제 또는 카테고리를 1~3단어로 규정합니다."
 }`;
 
     const userPrompt = `URL: ${url}

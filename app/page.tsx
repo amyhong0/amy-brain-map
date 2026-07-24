@@ -87,30 +87,13 @@ export default function Home() {
     url?: string;
   };
 
-  const COMPANY_STOP_TOKENS = new Set([
-    'openai','chatgpt','gpt','nvidia','meta','google','apple','samsung','microsoft','네이버','카카오','sk','lg','현대','기아','spacex','nasa','제네시스','genesis'
-  ]);
-  const BROADER_TOPIC_MAP: Record<string, string> = {
-    ai: 'AI', 'artificial intelligence': 'AI', 머신러닝: 'AI', 딥러닝: 'AI', 'deep learning': 'AI',
-    우주: 'Space', space: 'Space',
-  };
-  const normalizeTopic = (topic?: string) => {
-    if (!topic) return 'General';
-    const lower = topic.toLowerCase();
-    const token = lower.split(/[\s_\-]+/)[0];
-    if (COMPANY_STOP_TOKENS.has(token)) return 'General';
-    for (const [key, value] of Object.entries(BROADER_TOPIC_MAP)) {
-      if (lower.includes(key)) return value;
-    }
-    return topic;
-  };
   const toTopic = (doc: KnowledgeDoc) => {
     const raw = (doc as any).metadata?.topic;
-    if (raw && raw !== 'web') return normalizeTopic(raw);
+    if (raw && raw !== 'web') return raw;
     const fromTags = Array.isArray(doc.tags) ? doc.tags.find((t) => t && t !== 'web') : undefined;
-    if (fromTags) return normalizeTopic(fromTags);
+    if (fromTags) return fromTags;
     const token = (doc.title || '').split(' ')[0];
-    return normalizeTopic(token || 'topic');
+    return token || 'topic';
   };
 
   const rebuildGraph = useCallback((docs: KnowledgeDoc[]) => {

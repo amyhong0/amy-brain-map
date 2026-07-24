@@ -170,11 +170,12 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
   "topic": "문서의 핵심 기술/연구 분야를 1~3단어로 선택. 제목에 프로젝트명(예: 제네시스 미션)과 기술 키워드(예: AI)가 같이 있으면 절대 프로젝트명을 선택하지 말고 반드시 기술 분야(AI 등)를 선택. 회사명·서비스명·제품명·프로젝트명은 topic으로 사용 금지."
 }`;
 
+    const trimmedContent = rawContent.substring(0, 4000);
     const userPrompt = `URL: ${url}
 제목: ${rawTitle}
 
 본문 내용:
-${rawContent.substring(0, 12000)}
+${trimmedContent}
 
 위 내용을 분석하여 JSON 형식으로 출력하세요.`;
 
@@ -183,15 +184,20 @@ ${rawContent.substring(0, 12000)}
     if (llmResult) {
       try {
         console.log('LLM raw response:', llmResult);
-        // JSON 추출 시도 (마크다운 코드 블록 처리)
         let jsonStr = llmResult;
         const jsonMatch = llmResult.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (jsonMatch) {
           jsonStr = jsonMatch[1].trim();
+        } else {
+          const firstBrace = llmResult.indexOf('{');
+          const lastBrace = llmResult.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            jsonStr = llmResult.substring(firstBrace, lastBrace + 1);
+          }
         }
         console.log('LLM raw topic payload:', jsonStr);
         const parsed = JSON.parse(jsonStr);
-        
+
         const title = parsed.title?.trim() || rawTitle.trim();
         let content = parsed.content?.trim() || rawContent;
         let keywords: string[] = parsed.keywords || [];
@@ -212,7 +218,7 @@ ${rawContent.substring(0, 12000)}
         const titleMatch = llmResult.match(/"title"\s*:\s*"([^"]+)"/);
         const contentMatch = llmResult.match(/"content"\s*:\s*"([^"]+)"/);
         const keywordMatch = llmResult.match(/"keywords"\s*:\s*\[([^\]]+)\]/);
-        
+
         const title = titleMatch ? titleMatch[1] : rawTitle.trim();
         const content = contentMatch ? contentMatch[1] : rawContent;
         let keywords: string[] = [];
@@ -220,8 +226,8 @@ ${rawContent.substring(0, 12000)}
           keywords = keywordMatch[1].split(',').map(k => k.trim().replace(/"/g, '')).filter(k => k.length > 0);
         }
         if (keywords.length === 0) keywords = extractKeywordsFromContent(content);
-        const topic = keywords[0] || 'web';
-        
+        const topic = normalizeKnowledgeTopic(undefined, keywords) || keywords[0] || 'web';
+
         return { title, content, keywords, topic };
       }
     }

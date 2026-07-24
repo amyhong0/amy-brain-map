@@ -46,8 +46,9 @@ function EntityNode({ data, selected }: NodeProps) {
   const summary = ((data?.metadata as any)?.summary || '') + '';
   const createdAt = ((data?.metadata as any)?.createdAt || '') + '';
   const color = resolveColor(((data?.metadata as any)?.topic || data?.type || 'default') + '', title, 0);
-  const token = title.split(' ')[0];
-  const shortLabel = token.length > 10 ? token.slice(0, 10) + '…' : token;
+  const tags = ((data?.metadata as any)?.tags || []) as string[];
+  const keyword = tags.find(k => k && k !== 'web') || title.split(' ')[0];
+  const shortLabel = keyword.length > 10 ? keyword.slice(0, 10) + '…' : keyword;
 
   return (
     <div className="relative flex items-center justify-center">

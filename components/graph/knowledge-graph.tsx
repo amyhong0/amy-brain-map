@@ -338,11 +338,12 @@ function KnowledgeDetailModal({ node, onClose }: { node: Node; onClose: () => vo
 function layoutNodes(nodes: Node[], edges: Edge[]): Node[] {
   const positions = new Map<string, { x: number; y: number }>();
 
+  const radius = Math.max(180, nodes.length * 40);
   nodes.forEach((node, i) => {
     const angle = (i * Math.PI * 2) / nodes.length;
     positions.set(node.id, {
-      x: 300 + Math.cos(angle) * 160,
-      y: 220 + Math.sin(angle) * 160,
+      x: 300 + Math.cos(angle) * radius,
+      y: 220 + Math.sin(angle) * radius,
     });
   });
 
@@ -450,7 +451,8 @@ export default function KnowledgeGraph({ nodes: propNodes, edges: propEdges, onN
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        minZoom={0.5}
+        fitViewOptions={{ padding: 0.4 }}
+        minZoom={0.3}
         maxZoom={2.5}
         defaultEdgeOptions={{
           type: 'relationshipEdge',

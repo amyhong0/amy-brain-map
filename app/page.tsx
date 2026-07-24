@@ -151,7 +151,10 @@ export default function Home() {
   useEffect(() => {
     fetch('/api/knowledge')
       .then(res => res.json())
-      .then(data => setKnowledgeDocs((data.documents || []) as KnowledgeDoc[]))
+      .then(data => {
+        const sorted = (data.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setKnowledgeDocs(sorted as KnowledgeDoc[]);
+      })
       .catch(console.error);
   }, []);
 
@@ -291,7 +294,8 @@ export default function Home() {
                           addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다: ${data.document?.title || url}`, timestamp: new Date() });
                           const res = await fetch('/api/knowledge');
                           const json = await res.json();
-                          setKnowledgeDocs((json.documents || []) as KnowledgeDoc[]);
+                          const sorted = (json.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                          setKnowledgeDocs(sorted as KnowledgeDoc[]);
                           addSpellLog('cauldron', '대마법사', '지식 추가 워크플로우 완료', 'success');
                         }
                       } catch (error) {

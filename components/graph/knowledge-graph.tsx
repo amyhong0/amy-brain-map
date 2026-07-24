@@ -44,8 +44,10 @@ function resolveColor(type?: string, title = '', index = 0): string {
 function EntityNode({ data, selected }: NodeProps) {
   const title = ((data?.metadata as any)?.title || data?.label || 'Untitled') + '';
   const summary = ((data?.metadata as any)?.summary || '') + '';
+  const createdAt = ((data?.metadata as any)?.createdAt || '') + '';
   const color = resolveColor(((data?.metadata as any)?.topic || data?.type || 'default') + '', title, 0);
-  const shortSummary = summary.length > 24 ? summary.slice(0, 24) + '…' : summary;
+  const token = title.split(' ')[0];
+  const shortLabel = token.length > 10 ? token.slice(0, 10) + '…' : token;
 
   return (
     <div className="relative flex items-center justify-center">
@@ -62,7 +64,7 @@ function EntityNode({ data, selected }: NodeProps) {
           textShadow: '0 0 6px rgba(0,0,0,0.95)',
         }}
       >
-        {shortSummary || title}
+        {shortLabel}
       </div>
 
       <motion.div
@@ -76,7 +78,7 @@ function EntityNode({ data, selected }: NodeProps) {
         }}
         animate={selected ? { scale: [1, 1.06, 1] } : {}}
         transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-        title={title}
+        title={`${title} | ${createdAt}`.trim()}
       />
     </div>
   );

@@ -92,6 +92,44 @@ function normalizeKnowledgeTopic(topic?: string, keywords: string[] = []): strin
   return t;
 }
 
+async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promise<string | null> {
+  try {
+    const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'microsoft/phi-3-vision-128k-instruct',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              ...imageUrls.map(url => ({ type: 'image_url', image_url: { url } }))
+            ]
+          }
+        ],
+        max_tokens: 1024,
+        temperature: 0.2,
+      }),
+    });
+
+    if (!apiResponse.ok) {
+      const errText = await apiResponse.text();
+      console.error(`NVIDIA Vision API error (${apiResponse.status}):`, errText);
+      return null;
+    }
+
+    const data = await apiResponse.json();
+    return data.choices[0]?.message?.content || null;
+  } catch (error) {
+    console.error('NVIDIA Vision API call failed:', error);
+    return null;
+  }
+}
+
 async function callNvidiaLLM(prompt: string, systemPrompt: string): Promise<string | null> {
   try {
     const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
@@ -314,12 +352,38 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
       '.sponsor', '.partnership', '.promotion',
       '.newsletter-signup', '.subscribe-box',
       '.breadcrumb', '.breadcrumbs', '.path',
-      '.search-box', '.search-bar', '.search-form'
+      '.search-box', '.search-bar', '.search-form',
+      'img[src*="ad"]', 'img[class*="ad"]', 'img[id*="ad"]',
+      '.carousel-ad', '.ad-image', '.promo-image'
     ];
 
     removeSelectors.forEach(selector => { $(selector).remove(); });
 
     const rawContent = $('body').text().trim();
+
+    // Extract meaningful images (exclude ads, collect captions/alt text)
+    const imageDescriptions: string[] = [];
+    const adKeywords = ['ad', 'banner', 'promo', 'sponsor', '광고'];
+    $('img').each((_, el) => {
+      const $img = $(el);
+      const src = $img.attr('src') || '';
+      const alt = $img.attr('alt') || '';
+      const className = ($img.attr('class') || '').toLowerCase();
+      const id = ($img.attr('id') || '').toLowerCase();
+      const figcaption = $img.closest('figure').find('figcaption').first().text().trim();
+
+      if (adKeywords.some(k => src.toLowerCase().includes(k) || className.includes(k) || id.includes(k))) {
+        return; // skip ad images
+      }
+      const width = $img.attr('width');
+      const height = $img.attr('height');
+      if (width && height && (parseInt(width) < 50 || parseInt(height) < 50)) {
+        return; // skip tiny icons
+      }
+
+      const desc = [alt, figcaption].filter(Boolean).join(' ').trim();
+      if (desc) imageDescriptions.push(desc);
+    });
 
     // LLM API 호출 - 더 강력한 모델 사용
     const systemPrompt = `당신은 웹 콘텐츠 분석 전문가입니다. 주어진 HTML 본문에서 핵심 정보만 추출하여 JSON 형식으로 반환하세요.
@@ -338,13 +402,17 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
 }`;
 
     const trimmedContent = rawContent.substring(0, 4000);
+    let imageSection = '';
+    if (imageDescriptions.length > 0) {
+      imageSection = `\n\n[이미지 설명]\n` + imageDescriptions.slice(0, 10).map((d, i) => `이미지${i+1}: ${d}`).join('\n');
+    }
     const userPrompt = `URL: ${url}
 제목: ${rawTitle}
 
 본문 내용:
-${trimmedContent}
+${trimmedContent}${imageSection}
 
-위 내용을 분석하여 JSON 형식으로 출력하세요.`;
+위 내용과 이미지 설명을 분석하여 JSON 형식으로 출력하세요.`;
 
     const llmResult = await callNvidiaLLM(userPrompt, systemPrompt);
 

@@ -247,6 +247,8 @@ Time:        0.883 s
 
 | 해시 | 설명 |
 |---|---|
+| `bc43677` | fix: Vision API 모델 변경 (phi-3 → llama-3.2-11b-vision) 및 디버그 로깅 추가 |
+| `9e6440c` | fix: 인스타그램 캐러셀 이미지 수집/파싱 강화, fallback에 이미지 분석 포함 |
 | `a46f488` | fix: 인스타그램 캐러셀 이미지 분석 + 제목 생성 개선 |
 | `7987bf0` | feat: 블로그/인스타그램 제목 개선 및 A2A UI 반영 |
 | `20a87a7` | docs: A2A 병렬 텍스트+이미지 분석 변경 내역 추가 |
@@ -287,6 +289,25 @@ Time:        0.883 s
 | `jest.config.ts` | Jest 설정 (신규) |
 | `.clinerules` | 문서화 규칙 (change-log.md 업데이트 의무) 추가 |
 | `docs/change-log.md` | 본 문서 |
+
+---
+
+## 17. 인스타그램 캐러셀 이미지 텍스트 파싱 강화 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 캐러셀 이미지의 텍스트가 본문에 충분히 반영되지 않아 지식으로서 가치가 낮음
+- 이미지 수집 시 누락되는 이미지가 있을 수 있음
+
+### 수정
+1. **(커밋 `bb87700`)** `fetchInstagramContent()` 이미지 수집 강화:
+   - `og:image`, `og:image:url`, `twitter:image` 메타 태그 모두 확인
+   - `img` 태그 패턴 확대: `cdninstagram`, `scontent`, `fbcdn`
+   - JSON-LD structured data에서 `image` 배열 추출
+   - `seen` Set으로 URL 정규화 후 중복 제거
+2. Vision 분석 프롬프트 강화:
+   - 이미지 설명 요청 시 "빠짐없이 모든 텍스트를 한국어로 추출" 지시
+   - "이미지 N:" 형식으로 번호 매기기 지시
+3. 이미지 설명을 `[이미지 분석]` 섹션으로 content에 병합
 
 ---
 

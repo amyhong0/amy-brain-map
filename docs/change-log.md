@@ -283,3 +283,19 @@ Time:        0.883 s
 | `jest.config.ts` | Jest 설정 (신규) |
 | `.clinerules` | 문서화 규칙 (change-log.md 업데이트 의무) 추가 |
 | `docs/change-log.md` | 본 문서 |
+
+---
+
+## 14. A2A 병렬 텍스트+이미지 분석 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 이미지 분석을 위해 기존 텍스트 LLM 파이프라인을 변경해야 했음
+- 이미지가 많은 페이지의 경우 파싱 시간이 길어짐
+
+### 수정
+1. **(커밋 `f6b4b39`)** 텍스트 LLM(`meta/llama-3.1-8b-instruct`)은 그대로 유지
+2. NVIDIA 무료 Vision 모델(`microsoft/phi-3-vision-128k-instruct`)을 별도 Agent로 추가
+3. `Promise.all`로 텍스트 분석과 이미지 분석을 병렬 실행해 속도 향상
+4. 이미지 수집 시 광고 이미지 제외, 50x50 미만 아이콘 제외, `alt`/`figcaption` 텍스트 확인
+5. Vision 분석 결과를 content에 `[이미지 분석]` 섹션으로 병합
+6. 에러 발생 시 `.catch(() => [null, null])`로 fallback 처리

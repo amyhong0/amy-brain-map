@@ -260,14 +260,20 @@ async function fetchInstagramContent(url: string): Promise<{ title: string; cont
       addImage(src);
     });
 
-    // Collect from img tags with broader patterns
+    // Collect from ALL img tags - be aggressive for Instagram carousels
     $('img').each((_, el) => {
       const src = $(el).attr('src') || '';
       if (!src || !src.startsWith('http')) return;
-      // Instagram images often contain these patterns
-      if (src.includes('cdninstagram') || src.includes('scontent') || src.includes('fbcdn')) {
-        addImage(src);
-      }
+      // Skip obvious non-content images
+      if (src.includes('1x1') || src.includes('pixel') || src.includes('tracking') || src.includes('icon')) return;
+      addImage(src);
+    });
+
+    // Also look for background-image URLs in inline styles
+    $('[style*="background"]').each((_, el) => {
+      const style = $(el).attr('style') || '';
+      const urlMatch = style.match(/url\(['"]?(https?:\/\/[^'")\s]+)['"]?\)/);
+      if (urlMatch) addImage(urlMatch[1]);
     });
 
     // Look for JSON-LD structured data which may contain image array
@@ -573,13 +579,17 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
 
     // LLM 실패 시 향상된 fallback
     console.log('LLM returned null, using enhanced fallback');
-    const fallbackClean = cleanTextFallback(rawContent);
-    const fallbackKeywords = fallbackClean.keywords.length > 0 
-      ? fallbackClean.keywords 
-      : extractKeywordsFromContent(rawTitle + ' ' + rawContent.substring(0, 500));
-    
+    let fallbackContent = rawContent;
+    if (imageDescriptions.length > 0) {
+      fallbackContent += '\n\n[이미지 분석]\n' + imageDescriptions.join('\n');
+    }
+    const fallbackClean = cleanTextFallback(fallbackContent);
+    const fallbackKeywords = fallbackClean.keywords.length > 0
+      ? fallbackClean.keywords
+      : extractKeywordsFromContent((rawTitle || '') + ' ' + fallbackContent.substring(0, 500));
+
     return {
-      title: rawTitle.trim(),
+      title: rawTitle.trim() || visionTitleCandidate || fallbackKeywords[0] || '웹 문서',
       content: fallbackClean.content || `URL: ${url}\n\n콘텐츠 추출 실패 - 직접 방문하여 확인하세요.`,
       keywords: fallbackKeywords,
       topic: fallbackKeywords[0] || 'web'

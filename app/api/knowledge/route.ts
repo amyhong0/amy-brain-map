@@ -36,11 +36,25 @@ function cleanTextFallback(text: string): { title: string; content: string; keyw
   };
 }
 
+function normalizeKeyword(raw: string): string {
+  const lower = raw.toLocaleLowerCase('ko-KR').trim();
+  // Remove spaces between Korean characters only
+  const koreanOnly = lower.replace(/([가-힣])\s+([가-힣])/g, '$1$2');
+  // Ensure single spaces elsewhere
+  return koreanOnly.replace(/\s+/g, ' ').trim();
+}
+
 function extractKeywordsFromContent(text: string): string[] {
-  const words = text
-    .toLowerCase()
+  const normalized = text
+    .toLocaleLowerCase('ko-KR')
+    .replace(/\s+/g, ' ')
     .replace(/[^\w\s가-힣]/g, ' ')
+    .replace(/([가-힣])([A-Za-z])/g, '$1 $2')
+    .replace(/([A-Za-z])([가-힣])/g, '$1 $2');
+
+  const words = normalized
     .split(/\s+/)
+    .map(w => w.trim())
     .filter(word => word.length > 1);
 
   const stopWords = new Set([
@@ -52,7 +66,8 @@ function extractKeywordsFromContent(text: string): string[] {
   const filteredWords = words.filter(word => !stopWords.has(word));
   const wordCount = new Map<string, number>();
   filteredWords.forEach(word => {
-    wordCount.set(word, (wordCount.get(word) || 0) + 1);
+    const key = normalizeKeyword(word);
+    wordCount.set(key, (wordCount.get(key) || 0) + 1);
   });
 
   return Array.from(wordCount.entries())
@@ -348,7 +363,7 @@ ${trimmedContent}
         const title = parsed.title?.trim() || rawTitle.trim();
         let content = parsed.content?.trim() || rawContent;
         let keywords: string[] = parsed.keywords || [];
-        const topic = normalizeKnowledgeTopic(parsed.topic?.trim(), keywords) || keywords[0] || 'web';
+        const topic = normalizeKnowledgeTopic(normalizeKeyword(parsed.topic?.trim()), keywords) || keywords[0] || 'web';
 
         if (keywords.length === 0) keywords = extractKeywordsFromContent(content);
 
@@ -377,7 +392,7 @@ ${trimmedContent}
           keywords = keywordMatch[1].split(',').map(k => k.trim().replace(/"/g, '')).filter(k => k.length > 0);
         }
         if (keywords.length === 0) keywords = extractKeywordsFromContent(content);
-        const topic = normalizeKnowledgeTopic(undefined, keywords) || keywords[0] || 'web';
+        const topic = normalizeKnowledgeTopic(undefined, keywords.map(normalizeKeyword)) || keywords[0] || 'web';
 
         return { title, content, keywords, topic };
       }
@@ -443,7 +458,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 키워드 임베딩 계산
-    const kwList: string[] = (Array.isArray(tags) ? tags : [title.split(' ')[0]]).filter((t: string) => t && t !== 'web');
+    const kwList: string[] = (Array.isArray(tags) ? tags : [title.split(' ')[0]]).map(normalizeKeyword).filter((t: string) => t && t !== 'web');
     let kwEmbeddings: number[][] | null = null;
     if (kwList.length > 0) {
       try {

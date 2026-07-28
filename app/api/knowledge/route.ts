@@ -212,7 +212,7 @@ function isNaverBlogUrl(url: string): boolean {
   return /blog\.naver\.com/i.test(url);
 }
 
-async function fetchInstagramContent(url: string): Promise<{ title: string; content: string } | null> {
+async function fetchInstagramContent(url: string): Promise<{ title: string; content: string; imageUrls: string[] } | null> {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
@@ -224,16 +224,31 @@ async function fetchInstagramContent(url: string): Promise<{ title: string; cont
     const ogDesc = $('meta[property="og:description"]').attr('content') || '';
     const twitterDesc = $('meta[name="description"]').attr('content') || '';
     const description = ogDesc || twitterDesc;
-    // ogTitle example: "USERNAME | bio text on Instagram: \"post caption\""
-    const titleMatch = ogTitle.match(/\|(.+?)on Instagram/);
-    const title = titleMatch ? titleMatch[1].trim() : ogTitle;
+    // ogTitle for Instagram is usually: "USERNAME | bio text on Instagram: photos and videos"
+    // For carousel posts, the actual title is often in the first image, so use a placeholder here
+    const title = '';  // Will be filled by Vision model from first image
     // description contains likes/comments count + post text with hashtags
     const content = description
-      .replace(/^\d+ likes?, \d+ comments? - \S+ on \w+ \d+, \d+:\s*/, '')  // remove "174 likes, 81 comments - oxvalor on July 25, 2026"
-      .replace(/- \S+ on Instagram:?/, '')  // trailing username
+      .replace(/^\d+ likes?, \d+ comments? - \S+ on \w+ \d+, \d+:\s*/, '')
+      .replace(/- \S+ on Instagram:?/, '')
       .replace(/^["']|["']$/g, '')
       .trim();
-    return { title, content };
+
+    // Collect carousel images - Instagram uses og:image for the first image
+    const imageUrls: string[] = [];
+    const ogImage = $('meta[property="og:image"]').attr('content') || '';
+    if (ogImage && ogImage.startsWith('http')) {
+      imageUrls.push(ogImage);
+    }
+    // Look for additional carousel images in the HTML
+    $('img').each((_, el) => {
+      const src = $(el).attr('src') || '';
+      if (src && src.includes('cdninstagram.com') && src.includes('s640x640')) {
+        if (!imageUrls.includes(src)) imageUrls.push(src);
+      }
+    });
+
+    return { title, content, imageUrls };
   } catch (e) {
     console.error('Instagram fetch failed:', e);
     return null;
@@ -285,17 +300,28 @@ async function fetchNaverBlogContent(url: string): Promise<{ title: string; cont
   }
 }
 
-async function fetchWebContent(url: string): Promise<{ title: string; content: string; keywords: string[]; topic?: string }> {
+async function fetchWebContent(url: string): Promise<{ title: string; content: string; keywords: string[]; topic?: string; imageUrls?: string[] }> {
   try {
     // Special handling for Instagram
     if (isInstagramUrl(url)) {
       const igData = await fetchInstagramContent(url);
-      if (igData && igData.title) {
+      if (igData) {
+        // Use first image to generate title via Vision model for carousel posts
+        let title = igData.title;
+        if (!title && igData.imageUrls.length > 0) {
+          const visionTitle = await callNvidiaVisionModel([igData.imageUrls[0]], '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.');
+          if (visionTitle && !/^none$/i.test(visionTitle)) {
+            title = visionTitle.trim().split('\n')[0].trim();
+          }
+        }
+        if (!title) title = '인스타그램 게시글';
+
         return {
-          title: igData.title,
+          title,
           content: igData.content,
-          keywords: extractKeywordsFromContent(igData.title + ' ' + igData.content),
-          topic: igData.content ? 'sns' : 'web',
+          keywords: extractKeywordsFromContent(title + ' ' + igData.content),
+          topic: 'sns',
+          imageUrls: igData.imageUrls,
         };
       }
     }

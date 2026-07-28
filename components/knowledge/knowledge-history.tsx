@@ -70,7 +70,6 @@ function KnowledgeModal({ doc, onClose }: { doc: KnowledgeDoc; onClose: () => vo
 
 export default function KnowledgeHistory({ documents, onChange }: KnowledgeHistoryProps) {
   const [activeTab, setActiveTab] = useState<'date' | 'topic'>('date');
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<KnowledgeDoc | null>(null);
   const [urlInput, setUrlInput] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -144,9 +143,15 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
     return grouped;
   }, [docs]);
 
-  const byTopic = useMemo(() => {
-    return selectedTag ? docs.filter(doc => doc.tags.includes(selectedTag)) : docs;
-  }, [docs, selectedTag]);
+  const byTopicGrouped = useMemo(() => {
+    const groups = new Map<string, KnowledgeDoc[]>();
+    docs.forEach(doc => {
+      const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
+      if (!groups.has(topic)) groups.set(topic, []);
+      groups.get(topic)!.push(doc);
+    });
+    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [docs]);
 
   const handleAddKnowledge = async () => {
     if (!urlInput.trim()) return;
@@ -165,14 +170,6 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
   const handleDeleteDoc = async (docId: string) => {
     if (confirm('정말 삭제하시겠습니까?')) { await deleteKnowledgeDocAPI(docId); }
   };
-
-  const tagCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    docs.forEach(doc => {
-      doc.tags.forEach(tag => { counts[tag] = (counts[tag] || 0) + 1; });
-    });
-    return counts;
-  }, [docs]);
 
   return (
     <>
@@ -240,22 +237,17 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
           )}
 
           {activeTab === 'topic' && (
-            <div>
-              <div className="flex flex-wrap gap-1 mb-3">
-                <button onClick={() => setSelectedTag(null)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] transition-all border ${!selectedTag ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-600 text-gray-400 hover:border-gray-400'}`}>전체</button>
-                {Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).map(([tag, count]) => (
-                  <button key={tag} onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                    className={`px-2 py-0.5 rounded-full text-[10px] transition-all border ${selectedTag === tag ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-600 text-gray-400 hover:border-gray-400'}`}>
-                    {tag} <span className="opacity-60">{count}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-1">
-                {byTopic.map(doc => (
-                  <DocItem key={doc.id} doc={doc} onSelect={() => setSelectedDoc(doc)} onDelete={() => handleDeleteDoc(doc.id)} />
-                ))}
-              </div>
+            <div className="space-y-3">
+              {byTopicGrouped.map(([topic, items]) => (
+                <div key={topic}>
+                  <div className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <div className="h-px bg-gray-700 flex-1" /><span>{topic} ({items.length})</span><div className="h-px bg-gray-700 flex-1" />
+                  </div>
+                  {items.map(doc => (
+                    <DocItem key={doc.id} doc={doc} onSelect={() => setSelectedDoc(doc)} onDelete={() => handleDeleteDoc(doc.id)} />
+                  ))}
+                </div>
+              ))}
             </div>
           )}
         </div>

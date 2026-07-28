@@ -227,10 +227,27 @@ Time:        0.883 s
 
 ---
 
+## 13. 이미지 설명 수집 및 Vision 모드 텍스트화 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 페이지 내 이미지(인포그래픽, 차트, 스크린샷 등)의 내용이 텍스트로 저장되지 않아 지식으로서 가치가 낮음
+- 광고 이미지가 포함될 경우 노이즈로 작용
+
+### 수정
+1. **(커밋 `b7b384f`)** `callNvidiaVisionModel()` 추가: `microsoft/phi-3-vision-128k-instruct` 모델로 이미지 URL을 텍스트로 변환
+2. `fetchWebContent()` 내 이미지 수집 로직 추가:
+   - 광고 키워드(`ad`, `banner`, `promo`, `sponsor`, `광고`)가 포함된 이미지 제외
+   - 크기가 50x50 미만인 아이콘 제외
+   - `alt`, `figcaption` 텍스트가 있는 이미지만 수집
+3. 이미지 설명을 LLM 프롬프트에 `[이미지 설명]` 섹션으로 추가해 텍스트와 함께 분석
+
+---
+
 ## 커밋 로그 (최신순)
 
 | 해시 | 설명 |
 |---|---|
+| `b7b384f` | feat: 이미지 설명 수집 및 Vision 모드 텍스트화 (광고 제외) |
 | `e5ccbba` | feat: LLM 키워드 추출 프롬프트 개선 - 의미없는 단어 제거 |
 | `d71226b` | feat: 키워드 정규화 - 영문 대소문자 무시, 한글 띄어쓰기 무시 |
 | `49ea47a` | feat: 인스타그램/네이버 블로그 본문 파싱 지원 |
@@ -258,7 +275,7 @@ Time:        0.883 s
 
 | 파일 | 주요 변경 |
 |---|---|
-| `app/api/knowledge/route.ts` | LLM 파싱 강화, topic 정규화, 임베딩 저장, 잘림 처리, createdAt ISO, cleanTextFallback 버그 수정, Instagram/Naver blog 파싱, 키워드 정규화, LLM 키워드 품질 개선 |
+| `app/api/knowledge/route.ts` | LLM 파싱 강화, topic 정규화, 임베딩 저장, 잘림 처리, createdAt ISO, cleanTextFallback 버그 수정, Instagram/Naver blog 파싱, 키워드 정규화, LLM 키워드 품질 개선, 이미지 설명 수집 |
 | `app/page.tsx` | 그래프 엣지 로직 재작성 (임베딩 유사도 + substring fallback) |
 | `components/graph/knowledge-graph.tsx` | 노드 라벨/툴팁 개선, Entity→Knowledge 리네임, 패널 텍스트 수정, 줌/레이아웃 조정 |
 | `components/knowledge/knowledge-history.tsx` | 정렬 통일 (createdAt desc), createdAt ISO, 날짜별/주제별 필터 버튼 추가 |

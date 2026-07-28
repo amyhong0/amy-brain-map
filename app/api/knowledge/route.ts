@@ -361,31 +361,24 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
 
     const rawContent = $('body').text().trim();
 
-    // Extract meaningful images (exclude ads, collect captions/alt text)
-    const imageDescriptions: string[] = [];
+    // Collect meaningful image URLs (exclude ads, icons)
+    const imageUrls: string[] = [];
     const adKeywords = ['ad', 'banner', 'promo', 'sponsor', '광고'];
     $('img').each((_, el) => {
       const $img = $(el);
       const src = $img.attr('src') || '';
-      const alt = $img.attr('alt') || '';
       const className = ($img.attr('class') || '').toLowerCase();
       const id = ($img.attr('id') || '').toLowerCase();
-      const figcaption = $img.closest('figure').find('figcaption').first().text().trim();
-
-      if (adKeywords.some(k => src.toLowerCase().includes(k) || className.includes(k) || id.includes(k))) {
-        return; // skip ad images
-      }
       const width = $img.attr('width');
       const height = $img.attr('height');
-      if (width && height && (parseInt(width) < 50 || parseInt(height) < 50)) {
-        return; // skip tiny icons
-      }
 
-      const desc = [alt, figcaption].filter(Boolean).join(' ').trim();
-      if (desc) imageDescriptions.push(desc);
+      if (adKeywords.some(k => src.toLowerCase().includes(k) || className.includes(k) || id.includes(k))) return;
+      if (width && height && (parseInt(width) < 50 || parseInt(height) < 50)) return;
+      if (!src.startsWith('http')) return;
+      imageUrls.push(src);
     });
 
-    // LLM API 호출 - 더 강력한 모델 사용
+    const trimmedContent = rawContent.substring(0, 4000);
     const systemPrompt = `당신은 웹 콘텐츠 분석 전문가입니다. 주어진 HTML 본문에서 핵심 정보만 추출하여 JSON 형식으로 반환하세요.
 
 반드시 다음 JSON 형식만 출력하세요 (다른 텍스트 없이):
@@ -401,20 +394,21 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
   "topic": "문서의 핵심 기술/연구 분야를 1~3단어로 선택. 제목에 프로젝트명(예: 제네시스 미션)과 기술 키워드(예: AI)가 같이 있으면 절대 프로젝트명을 선택하지 말고 반드시 기술 분야(AI 등)를 선택. 회사명·서비스명·제품명·프로젝트명은 topic으로 사용 금지."
 }`;
 
-    const trimmedContent = rawContent.substring(0, 4000);
-    let imageSection = '';
-    if (imageDescriptions.length > 0) {
-      imageSection = `\n\n[이미지 설명]\n` + imageDescriptions.slice(0, 10).map((d, i) => `이미지${i+1}: ${d}`).join('\n');
-    }
     const userPrompt = `URL: ${url}
 제목: ${rawTitle}
 
 본문 내용:
-${trimmedContent}${imageSection}
+${trimmedContent}
 
-위 내용과 이미지 설명을 분석하여 JSON 형식으로 출력하세요.`;
+위 내용을 분석하여 JSON 형식으로 출력하세요.`;
 
-    const llmResult = await callNvidiaLLM(userPrompt, systemPrompt);
+    // A2A: 텍스트 분석과 이미지 분석을 병렬 실행
+    const [llmResult, imageAnalysis] = await Promise.all([
+      callNvidiaLLM(userPrompt, systemPrompt),
+      imageUrls.length > 0
+        ? callNvidiaVisionModel(imageUrls.slice(0, 10), '이 이미지들의 핵심 내용을 한국어로 요약해주세요. 각 이미지의 주요 텍스트, 차트, 인포그래픽 내용을 추출해주세요.')
+        : Promise.resolve(null)
+    ]).catch(() => [null, null]); // fallback on any error
 
     if (llmResult) {
       try {
@@ -436,6 +430,11 @@ ${trimmedContent}${imageSection}
         const title = parsed.title?.trim() || rawTitle.trim();
         let content = parsed.content?.trim() || rawContent;
         let keywords: string[] = parsed.keywords || [];
+
+        // Vision 분석 결과를 content에 병합
+        if (imageAnalysis) {
+          content += `\n\n[이미지 분석]\n${imageAnalysis}`;
+        }
         const topic = normalizeKnowledgeTopic(normalizeKeyword(parsed.topic?.trim()), keywords) || keywords[0] || 'web';
 
         if (keywords.length === 0) keywords = extractKeywordsFromContent(content);

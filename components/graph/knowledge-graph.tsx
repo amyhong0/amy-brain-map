@@ -40,8 +40,8 @@ function resolveColor(type?: string, title = '', index = 0): string {
   return PALETTE[topicHash(title) % PALETTE.length];
 }
 
-// ── Entity Node ───────────────────────────────────────────────────
-function EntityNode({ data, selected }: NodeProps) {
+// ── Knowledge Node ────────────────────────────────────────────────
+function KnowledgeNode({ data, selected }: NodeProps) {
   const title = ((data?.metadata as any)?.title || data?.label || 'Untitled') + '';
   const summary = ((data?.metadata as any)?.summary || '') + '';
   const createdAt = ((data?.metadata as any)?.createdAt || '') + '';
@@ -172,14 +172,14 @@ function SummaryPanel({ nodes, edges, onClose }: { nodes: Node[]; edges: Edge[];
     >
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="text-slate-200 text-xs font-bold tracking-wide">ENTITY GRAPH</div>
+          <div className="text-slate-200 text-xs font-bold tracking-wide">KNOWLEDGE GRAPH</div>
           <div className="text-[10px] text-slate-500">Knowledge graph summary</div>
         </div>
         <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded-md hover:bg-slate-800/50 transition-colors">✕</button>
       </div>
 
       <div className="mb-3">
-        <div className="text-[10px] text-slate-500 mb-1.5">Entity 분포</div>
+        <div className="text-[10px] text-slate-500 mb-1.5">키워드 분포</div>
         <div className="space-y-1.5">
           {typeStats.map(([type, count], i) => {
             const color = resolveColor(type, '', i);
@@ -213,7 +213,7 @@ function SummaryPanel({ nodes, edges, onClose }: { nodes: Node[]; edges: Edge[];
           총 {nodes.length}개 노드, {edges.length}개 연결
         </div>
         <div className="text-[10px] text-slate-500 mt-1">
-          Entity 간 관계가 시각화되어 있습니다.
+          키워드 기반 관계가 시각화되어 있습니다.
         </div>
       </div>
     </motion.div>
@@ -413,7 +413,7 @@ export default function KnowledgeGraph({ nodes: propNodes, edges: propEdges, onN
     return null;
   };
 
-  const nodeTypes = useMemo(() => ({ entityNode: EntityNode }), []);
+  const nodeTypes = useMemo(() => ({ knowledgeNode: KnowledgeNode }), []);
   const edgeTypes = useMemo(() => ({ relationshipEdge: RelationshipEdge as any }), []);
 
   useEffect(() => {
@@ -421,7 +421,7 @@ export default function KnowledgeGraph({ nodes: propNodes, edges: propEdges, onN
     const withIdx = positioned.map((node, idx) => ({
       ...node,
       data: { ...node.data, metadata: { ...(node.data?.metadata || {}), idx } },
-      type: 'entityNode',
+      type: 'knowledgeNode',
     }));
     setNodes(withIdx);
     setEdges(propEdges);
@@ -477,7 +477,7 @@ export default function KnowledgeGraph({ nodes: propNodes, edges: propEdges, onN
             borderRadius: '6px',
           }}
           maskColor="rgba(0, 0, 0, 0.6)"
-          nodeColor={(node) => resolveColor(node.data?.type as string, (node.data?.metadata as { entityType?: string; title?: string })?.entityType || (node.data?.metadata as { title?: string })?.title || '', (node.data?.metadata as { idx?: number })?.idx ?? 0)}
+          nodeColor={(node) => resolveColor(node.data?.type as string, (node.data?.metadata as { title?: string })?.title || '', (node.data?.metadata as { idx?: number })?.idx ?? 0)}
           nodeStrokeWidth={1}
         />
       </ReactFlow>

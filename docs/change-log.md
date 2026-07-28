@@ -157,10 +157,35 @@ Time:        0.883 s
 
 ---
 
+## 8. 엔터티 개념 제거 및 그래프 UI 정리 (`components/graph/knowledge-graph.tsx`)
+
+### 문제
+- 엣지 연결이 키워드 기반으로 바뀌었지만 여전히 노드/패널에 "entity" 개념이 남아 있음
+- 초기 줌이 너무 가까워 노드가 화면에 꽉 차서 보기 불편
+
+### 수정
+1. **(커밋 `7c81929`)** 초기 fitView padding 0.4, minZoom 0.3, 노드 배치 반경 동적 확장
+2. **(커밋 (진행 중))** `EntityNode` → `KnowledgeNode`으로 함수/타입명 변경
+3. `entityNode` → `knowledgeNode`, `nodeTypes` 매핑 업데이트
+4. SummaryPanel: "ENTITY GRAPH" → "KNOWLEDGE GRAPH", "Entity 분포" → "키워드 분포", 설명 텍스트 한국어화
+5. MiniMap에서 `entityType` 참조 제거
+
+## 9. .clinerules 규칙 추가
+
+### 수정
+- 문서화 규칙 섹션 추가: 모든 변경 완료 시 `docs/change-log.md` 업데이트 의무화
+- 문제 → 수정 구조, 관련 커밋 해시 기록 요건 명시
+- 디자인 프로세스 번호 조정
+
+---
+
 ## 커밋 로그 (최신순)
 
 | 해시 | 설명 |
 |---|---|
+| `(진행 중)` | fix: 엔터티 개념 제거, KnowledgeNode, .clinerules 문서화 규칙 추가 |
+| `7c81929` | fix: 지식그래프 초기 줌 padding 0.4, minZoom 0.3, 노드 간격 동적 확장 |
+| `e83746a` | docs: 변경 내역 및 테스트 결과 문서화 |
 | `fafb883` | feat: 단위 테스트 추가 + cleanTextFallback 버그 수정 |
 | `af89f9a` | feat: 지식그래프 엣지 → NVIDIA 임베딩 코사인 유사도 |
 | `8832f86` | fix: 엣지 연결 포함 관계 확장 (AI ↔ AI 모델) |
@@ -181,7 +206,9 @@ Time:        0.883 s
 |---|---|
 | `app/api/knowledge/route.ts` | LLM 파싱 강화, topic 정규화, 임베딩 저장, 잘림 처리, createdAt ISO, cleanTextFallback 버그 수정 |
 | `app/page.tsx` | 그래프 엣지 로직 재작성 (임베딩 유사도 + substring fallback) |
-| `components/graph/knowledge-graph.tsx` | 노드 라벨/툴팁 개선 (키워드 우선, 툴팁=제목\|날짜) |
+| `components/graph/knowledge-graph.tsx` | 노드 라벨/툴팁 개선, Entity→Knowledge 리네임, 패널 텍스트 수정, 줌/레이아웃 조정 |
 | `components/knowledge/knowledge-history.tsx` | 정렬 통일 (createdAt desc), createdAt ISO |
 | `__tests__/knowledge-utils.test.ts` | 26개 단위 테스트 (신규) |
 | `jest.config.ts` | Jest 설정 (신규) |
+| `.clinerules` | 문서화 규칙 (change-log.md 업데이트 의무) 추가 |
+| `docs/change-log.md` | 본 문서 |

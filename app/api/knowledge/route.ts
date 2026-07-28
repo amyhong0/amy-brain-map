@@ -113,7 +113,7 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promi
             ]
           }
         ],
-        max_tokens: 1024,
+        max_tokens: 4096,
         temperature: 0.2,
       }),
     });
@@ -178,7 +178,7 @@ async function callNvidiaEmbeddings(texts: string[]): Promise<number[][] | null>
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'nvidia/nv-embed-qa-4',
+        model: 'nvidia/nv-embedqa-e5-v5',
         input: texts,
         input_type: 'query',
       }),

@@ -93,6 +93,8 @@ function normalizeKnowledgeTopic(topic?: string, keywords: string[] = []): strin
 }
 
 async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promise<string | null> {
+  const requestId = `vis_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  console.log(`[${requestId}] Vision API called with ${imageUrls.length} images:`, imageUrls.slice(0, 3).map(u => u.split('?')[0]));
   try {
     const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
@@ -101,7 +103,7 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promi
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'microsoft/phi-3-vision-128k-instruct',
+        model: 'meta/llama-3.2-11b-vision-instruct',
         messages: [
           {
             role: 'user',
@@ -116,16 +118,19 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promi
       }),
     });
 
+    console.log(`[${requestId}] Vision API status:`, apiResponse.status, apiResponse.statusText);
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
-      console.error(`NVIDIA Vision API error (${apiResponse.status}):`, errText);
+      console.error(`[${requestId}] NVIDIA Vision API error:`, errText.slice(0, 500));
       return null;
     }
 
     const data = await apiResponse.json();
-    return data.choices[0]?.message?.content || null;
+    const result = data.choices[0]?.message?.content || null;
+    console.log(`[${requestId}] Vision API result length:`, result?.length || 0, result?.slice(0, 200));
+    return result;
   } catch (error) {
-    console.error('NVIDIA Vision API call failed:', error);
+    console.error(`[${requestId}] NVIDIA Vision API call failed:`, error);
     return null;
   }
 }
@@ -454,20 +459,26 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
     let visionTitleCandidate: string | null = null;
     let imageDescriptions: string[] = [];
     if (imageUrls.length > 0) {
+      console.log(`[${new URL(url).hostname}] Starting vision analysis for ${imageUrls.length} images`);
       try {
         const [titleResult, descResult] = await Promise.all([
           callNvidiaVisionModel([imageUrls[0]], '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.'),
           callNvidiaVisionModel(imageUrls.slice(0, 8), '이 인스타그램 캐러셀 이미지들에 있는 모든 텍스트를 빠짐없이 한국어로 추출해주세요. 각 이미지에 있는 글자, 문구, 설명, 콘텐츠를 순서대로 추출하고 "이미지 N:" 형식으로 번호를 매겨주세요.')
         ]);
+        console.log(`[${new URL(url).hostname}] Vision title result:`, titleResult?.slice(0, 100));
+        console.log(`[${new URL(url).hostname}] Vision desc result length:`, descResult?.length || 0);
         if (titleResult && !/^none$/i.test(titleResult)) {
           visionTitleCandidate = titleResult.trim().split('\n')[0].trim();
         }
         if (descResult) {
           imageDescriptions = descResult.split('\n').filter((line: string) => line.trim().length > 0).slice(0, 10);
         }
+        console.log(`[${new URL(url).hostname}] Image descriptions count:`, imageDescriptions.length);
       } catch (e) {
         console.error('Vision analysis failed:', e);
       }
+    } else {
+      console.log(`[${new URL(url).hostname}] No images found for vision analysis`);
     }
 
     const systemPrompt = `당신은 웹 콘텐츠 분석 전문가입니다. 주어진 HTML 본문에서 핵심 정보만 추출하여 JSON 형식으로 반환하세요.
@@ -583,13 +594,36 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
     if (imageDescriptions.length > 0) {
       fallbackContent += '\n\n[이미지 분석]\n' + imageDescriptions.join('\n');
     }
-    const fallbackClean = cleanTextFallback(fallbackContent);
+
+    // 이미지 분석 텍스트를 보존하면서 노이즈 제거
+    let fallbackClean: { title: string; content: string; keywords: string[] };
+    if (imageDescriptions.length > 0) {
+      const lines = fallbackContent.split('\n')
+        .map(l => l.trim())
+        .filter(line => {
+          if (line.length < 15 && !line.startsWith('이미지')) return false;
+          if (/^[가-힣]{2,4}\s*기자$/.test(line)) return false;
+          if (/무단전재|재배포|copyright/i.test(line)) return false;
+          if (/핫클릭|더보기|관련기사|추천기사/i.test(line)) return false;
+          return true;
+        });
+      const content = lines.join('\n\n');
+      const keywords = extractKeywordsFromContent(fallbackContent);
+      fallbackClean = {
+        title: rawTitle.trim() || visionTitleCandidate || keywords[0] || '웹 문서',
+        content,
+        keywords: keywords.slice(0, 5)
+      };
+    } else {
+      fallbackClean = cleanTextFallback(fallbackContent);
+    }
+
     const fallbackKeywords = fallbackClean.keywords.length > 0
       ? fallbackClean.keywords
       : extractKeywordsFromContent((rawTitle || '') + ' ' + fallbackContent.substring(0, 500));
 
     return {
-      title: rawTitle.trim() || visionTitleCandidate || fallbackKeywords[0] || '웹 문서',
+      title: fallbackClean.title || visionTitleCandidate || fallbackKeywords[0] || '웹 문서',
       content: fallbackClean.content || `URL: ${url}\n\n콘텐츠 추출 실패 - 직접 방문하여 확인하세요.`,
       keywords: fallbackKeywords,
       topic: fallbackKeywords[0] || 'web'

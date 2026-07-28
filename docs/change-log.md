@@ -212,3 +212,19 @@ Time:        0.883 s
 | `jest.config.ts` | Jest 설정 (신규) |
 | `.clinerules` | 문서화 규칙 (change-log.md 업데이트 의무) 추가 |
 | `docs/change-log.md` | 본 문서 |
+
+---
+
+## 10. 지식 추가 본문 파싱 강화 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 뉴스 외에 블로그, SNS 등 다양한 사이트의 본문 파싱이 제대로 동작하지 않음
+- 인스타그램은 og:title/description만 있고 본문이 별도 구조, 네이버 블로그는 iframe 내 콘텐츠
+- 일반 웹보다 정확도가 낮아 저장된 문서의 품질이 떨어짐
+
+### 수정
+1. **(커밋 `49ea47a`)** 플랫폼별 파싱 함수 추가:
+   - `fetchInstagramContent()`: og:title에서 캡션 추출, og:description에서 본문 추출, 좋아요/댓글/사용자명 등 노이즈 제거
+   - `fetchNaverBlogContent()`: `#mainFrame` iframe src 추출 후 내부 HTML 요청, `#postViewArea`/`.se-main-container`에서 본문 추출
+2. `fetchWebContent()` 상단에 Instagram/Naver blog 분기 추가
+3. 파싱 성공 시 `keywords`, `topic`도 함께 추출해 저장

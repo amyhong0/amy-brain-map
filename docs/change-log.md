@@ -247,6 +247,7 @@ Time:        0.883 s
 
 | 해시 | 설명 |
 |---|---|
+| `b26fe77` | fix: Vision max_tokens 4096, Embedding 모델 nv-embedqa-e5-v5로 변경 |
 | `bc43677` | fix: Vision API 모델 변경 (phi-3 → llama-3.2-11b-vision) 및 디버그 로깅 추가 |
 | `9e6440c` | fix: 인스타그램 캐러셀 이미지 수집/파싱 강화, fallback에 이미지 분석 포함 |
 | `a46f488` | fix: 인스타그램 캐러셀 이미지 분석 + 제목 생성 개선 |

@@ -70,6 +70,8 @@ function KnowledgeModal({ doc, onClose }: { doc: KnowledgeDoc; onClose: () => vo
 
 export default function KnowledgeHistory({ documents, onChange }: KnowledgeHistoryProps) {
   const [activeTab, setActiveTab] = useState<'date' | 'topic'>('date');
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [selectedDoc, setSelectedDoc] = useState<KnowledgeDoc | null>(null);
   const [urlInput, setUrlInput] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -133,25 +135,47 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
     return [...knowledgeDocs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [documents, knowledgeDocs]);
 
+  const filteredDocs = useMemo(() => {
+    if (dateRange === 'all') return docs;
+    const now = new Date();
+    const cutoff = new Date(now);
+    if (dateRange === 'today') cutoff.setDate(now.getDate() - 1);
+    else if (dateRange === 'week') cutoff.setDate(now.getDate() - 7);
+    else if (dateRange === 'month') cutoff.setMonth(now.getMonth() - 1);
+    return docs.filter(doc => new Date(doc.createdAt) >= cutoff);
+  }, [docs, dateRange]);
+
   const byDate = useMemo(() => {
     const grouped = new Map<string, KnowledgeDoc[]>();
-    docs.forEach(doc => {
+    filteredDocs.forEach(doc => {
       const key = formatDate(doc.createdAt);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key)!.push(doc);
     });
     return grouped;
+  }, [filteredDocs]);
+
+  const topicCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    docs.forEach(doc => {
+      const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
+      counts.set(topic, (counts.get(topic) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [docs]);
 
   const byTopicGrouped = useMemo(() => {
     const groups = new Map<string, KnowledgeDoc[]>();
-    docs.forEach(doc => {
+    (selectedTopic ? docs.filter(doc => {
+      const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
+      return topic === selectedTopic;
+    }) : docs).forEach(doc => {
       const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
       if (!groups.has(topic)) groups.set(topic, []);
       groups.get(topic)!.push(doc);
     });
     return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
-  }, [docs]);
+  }, [docs, selectedTopic]);
 
   const handleAddKnowledge = async () => {
     if (!urlInput.trim()) return;
@@ -220,7 +244,43 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
           )}
         </div>
 
-        <div className="p-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+        <div className="px-3 pt-1 pb-0.5">
+          {activeTab === 'date' && (
+            <div className="flex gap-1 mb-2">
+              {(['all', 'today', 'week', 'month'] as const).map(range => (
+                <button key={range} onClick={() => setDateRange(range)}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] transition-all border ${
+                    dateRange === range
+                      ? 'bg-purple-600 border-purple-500 text-white'
+                      : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                  }`}>
+                  {range === 'all' ? '전체' : range === 'today' ? '오늘' : range === 'week' ? '7일' : '30일'}
+                </button>
+              ))}
+            </div>
+          )}
+          {activeTab === 'topic' && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              <button onClick={() => setSelectedTopic(null)}
+                className={`px-2.5 py-0.5 rounded-full text-[10px] transition-all border ${
+                  !selectedTopic
+                    ? 'bg-purple-600 border-purple-500 text-white'
+                    : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                }`}>전체</button>
+              {topicCounts.map(([topic, count]) => (
+                <button key={topic} onClick={() => setSelectedTopic(selectedTopic === topic ? null : topic)}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] transition-all border ${
+                    selectedTopic === topic
+                      ? 'bg-purple-600 border-purple-500 text-white'
+                      : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                  }`}>
+                  {topic} <span className="opacity-60">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="p-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 360px)' }}>
           {activeTab === 'date' && (
             <div className="space-y-3">
               {Array.from(byDate.entries()).map(([dateLabel, items]) => (

@@ -152,8 +152,115 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
+function isInstagramUrl(url: string): boolean {
+  return /instagram\.com\/(p|reel|tv)\//i.test(url);
+}
+function isNaverBlogUrl(url: string): boolean {
+  return /blog\.naver\.com/i.test(url);
+}
+
+async function fetchInstagramContent(url: string): Promise<{ title: string; content: string } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+    const ogDesc = $('meta[property="og:description"]').attr('content') || '';
+    const twitterDesc = $('meta[name="description"]').attr('content') || '';
+    const description = ogDesc || twitterDesc;
+    // ogTitle example: "USERNAME | bio text on Instagram: \"post caption\""
+    const titleMatch = ogTitle.match(/\|(.+?)on Instagram/);
+    const title = titleMatch ? titleMatch[1].trim() : ogTitle;
+    // description contains likes/comments count + post text with hashtags
+    const content = description
+      .replace(/^\d+ likes?, \d+ comments? - \S+ on \w+ \d+, \d+:\s*/, '')  // remove "174 likes, 81 comments - oxvalor on July 25, 2026"
+      .replace(/- \S+ on Instagram:?/, '')  // trailing username
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    return { title, content };
+  } catch (e) {
+    console.error('Instagram fetch failed:', e);
+    return null;
+  }
+}
+
+async function fetchNaverBlogContent(url: string): Promise<{ title: string; content: string } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    // Naver blog wraps content in an iframe
+    const iframeSrc = $('#mainFrame').attr('src') || $('iframe').first().attr('src');
+    if (!iframeSrc) return null;
+    const fullFrameUrl = iframeSrc.startsWith('http') ? iframeSrc : `https://blog.naver.com${iframeSrc}`;
+    const frameRes = await fetch(fullFrameUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    });
+    if (!frameRes.ok) return null;
+    const frameHtml = await frameRes.text();
+    const $frame = cheerio.load(frameHtml);
+    // Remove unwanted elements from frame
+    const removeSelectors = ['script', 'style', 'nav', 'footer', 'header', 'aside',
+      '.ad', '.advertisement', '.banner', '.popup', '.se-module-toolbar',
+      '.blog2_blog_category', '.blog2_blog_category_layer',
+      '.blog2_post_comment', '.blog2_post_blogger',
+      '.btn_post_share', '.btn_post_scrap',
+      'iframe', 'noscript', '.copyright',
+      '.blog2_post_related', '.blog2_post_reply',
+      '#postViewArea_paging', '#postViewArea_prne'];
+    removeSelectors.forEach(sel => { $frame(sel).remove(); });
+    const title = $frame('meta[property="og:title"]').attr('content')
+      || $frame('.se-title').text()
+      || $frame('h1').first().text()
+      || $frame('title').text()
+      || '';
+    let content = $frame('#postViewArea').text()
+      || $frame('.se-main-container').text()
+      || $frame('.se_component_wrap').text()
+      || $frame('body').text().trim();
+    content = content.replace(/\s+/g, ' ').trim();
+    return { title, content: content.substring(0, 5000) };
+  } catch (e) {
+    console.error('Naver blog fetch failed:', e);
+    return null;
+  }
+}
+
 async function fetchWebContent(url: string): Promise<{ title: string; content: string; keywords: string[]; topic?: string }> {
   try {
+    // Special handling for Instagram
+    if (isInstagramUrl(url)) {
+      const igData = await fetchInstagramContent(url);
+      if (igData && igData.title) {
+        return {
+          title: igData.title,
+          content: igData.content,
+          keywords: extractKeywordsFromContent(igData.title + ' ' + igData.content),
+          topic: igData.content ? 'sns' : 'web',
+        };
+      }
+    }
+
+    // Special handling for Naver blog
+    if (isNaverBlogUrl(url)) {
+      const blogData = await fetchNaverBlogContent(url);
+      if (blogData && blogData.title) {
+        const keywords = extractKeywordsFromContent(blogData.title + ' ' + blogData.content);
+        return {
+          title: blogData.title,
+          content: blogData.content || '네이버 블로그 콘텐츠',
+          keywords,
+          topic: keywords[0] || 'web',
+        };
+      }
+    }
+
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
     });

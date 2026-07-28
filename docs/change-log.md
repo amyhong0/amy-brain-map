@@ -9,7 +9,7 @@
 ### 문제
 - NVIDIA LLM 응답이 `max_tokens` 제한(2048)에 의해 중간에 잘리면서 `JSON.parse()` 실패
 - `SyntaxError: Unterminated string in JSON at position 3479` 발생
-- 실패 시 정규식 fallback이 회복했지만, topic이 `"ai"` 등 의미 없는 값으로 저장됨
+- 실패 시 정규식 fallback이 회복했지만 topic이 `"ai"` 등 의미 없는 값으로 저장됨
 
 ### 수정
 1. **(커밋 `1d49378`)** 프롬프트 본문 길이를 12000 → 4000으로 축소해 LLM 부하 감소
@@ -121,25 +121,25 @@
 
 | 카테고리 | 테스트명 | 검증 내용 |
 |---|---|---|
-| **extractKeywordsFromContent** (4) | English | "AI"가 가장 빈도 높은 키워드 |
+| extractKeywordsFromContent (4) | English | "AI"가 가장 빈도 높은 키워드 |
 | | Korean | "인공지능"이 가장 빈도 높은 키워드 |
 | | Stop words | stop word 필터링 확인 |
 | | Empty input | 빈 입력 → 빈 배열 |
-| **normalizeKnowledgeTopic** (5) | Company reject | "nvidia" → tech 키워드 "ai"로 fallback |
+| normalizeKnowledgeTopic (5) | Company reject | "nvidia" → tech 키워드 "ai"로 fallback |
 | | Project reject | "제네시스" → "ai"로 fallback |
 | | Tech domain | "자율주행" 그대로 유지 |
 | | Empty topic | 첫 번째 키워드 반환 |
 | | Empty both | "web" 반환 |
-| **cosineSimilarity** (4) | Identical | 동일 벡터 = 1 |
+| cosineSimilarity (4) | Identical | 동일 벡터 = 1 |
 | | Orthogonal | 직교 벡터 = 0 |
 | | Similar | 유사 벡터 > 0.9 |
 | | Length mismatch | 길이 다르면 0 |
-| **cleanTextFallback** (5) | Email | 이메일 제거 확인 |
+| cleanTextFallback (5) | Email | 이메일 제거 확인 |
 | | Copyright | 저작권 문구 제거 |
 | | Footer | "더보기"/"관련 기사" 제거 |
 | | Title extraction | 15자 이상 첫 줄이 title |
 | | Default title | 빈 입력 → "웹 문서" |
-| **graph edge logic** (8) | Exact match | 동일 키워드 연결 |
+| graph edge logic (8) | Exact match | 동일 키워드 연결 |
 | | Cross-language | "ai" ↔ "인공지능": substring 미연결 (임베딩 필요) |
 | | Substring | "ai" ↔ "ai 모델": substring 연결 |
 | | Unrelated | "자동차" ↔ "요리": 미연결 |
@@ -165,10 +165,12 @@ Time:        0.883 s
 
 ### 수정
 1. **(커밋 `7c81929`)** 초기 fitView padding 0.4, minZoom 0.3, 노드 배치 반경 동적 확장
-2. **(커밋 (진행 중))** `EntityNode` → `KnowledgeNode`으로 함수/타입명 변경
+2. **(커밋 `886ca3c`)** `EntityNode` → `KnowledgeNode`으로 함수/타입명 변경
 3. `entityNode` → `knowledgeNode`, `nodeTypes` 매핑 업데이트
 4. SummaryPanel: "ENTITY GRAPH" → "KNOWLEDGE GRAPH", "Entity 분포" → "키워드 분포", 설명 텍스트 한국어화
 5. MiniMap에서 `entityType` 참조 제거
+
+---
 
 ## 9. .clinerules 규칙 추가
 
@@ -179,11 +181,63 @@ Time:        0.883 s
 
 ---
 
+## 10. 지식 추가 본문 파싱 강화 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 뉴스 외에 블로그, SNS 등 다양한 사이트의 본문 파싱이 제대로 동작하지 않음
+- 인스타그램은 og:title/description만 있고 본문이 별도 구조, 네이버 블로그는 iframe 내 콘텐츠
+- 일반 웹보다 정확도가 낮아 저장된 문서의 품질이 떨어짐
+
+### 수정
+1. **(커밋 `49ea47a`)** 플랫폼별 파싱 함수 추가:
+   - `fetchInstagramContent()`: og:title에서 캡션 추출, og:description에서 본문 추출, 좋아요/댓글/사용자명 등 노이즈 제거
+   - `fetchNaverBlogContent()`: `#mainFrame` iframe src 추출 후 내부 HTML 요청, `#postViewArea`/`.se-main-container`에서 본문 추출
+2. `fetchWebContent()` 상단에 Instagram/Naver blog 분기 추가
+3. 파싱 성공 시 `keywords`, `topic`도 함께 추출해 저장
+
+---
+
+## 11. 키워드 정규화 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 영문 키워드에서 "AI"와 "ai"가 서로 다른 키워드로 저장되어 그래프 연결/검색이 불안정
+- 한글 키워드에서 "인공지능"과 "인공 지능"이 띄어쓰기 차이로 서로 다른 키워드로 저장됨
+
+### 수정
+1. **(커밋 `d71226b`)** `normalizeKeyword()` 추가:
+   - `toLocaleLowerCase('ko-KR')`로 영문 대소문자 무시
+   - 한글 문자 사이의 띄어쓰기 제거: `([가-힣])\s+([가-힣])` → 병합
+   - 나머지 공백은 단일 space로 정규화
+2. `extractKeywordsFromContent()` 내 wordCount key 생성 시 `normalizeKeyword()` 적용
+3. topic 정규화, embedding `kwList`, fallback keywords에도 `normalizeKeyword()` 적용
+
+---
+
+## 12. LLM 키워드 추출 품질 개선 (`app/api/knowledge/route.ts`)
+
+### 문제
+- 블로그 파싱 결과 키워드에 '것이', '오픈' 등 의미 없는 단어가 포함됨
+- '오픈소스'처럼 의미 있는 복합어가 분리되어 추출됨
+
+### 수정
+1. **(커밋 `e5ccbba`)** systemPrompt의 keywords 지시를 구체화:
+   - 조사/어미/접속사/단독 글자('것이','그것','이것','오픈' 등) 금지 명시
+   - 복합어는 전체로 추출하도록 지시 ('오픈소스'는 분리 금지)
+   - 한글 2글자 이상, 영문 의미있는 단어만 포함
+
+---
+
 ## 커밋 로그 (최신순)
 
 | 해시 | 설명 |
 |---|---|
-| `(진행 중)` | fix: 엔터티 개념 제거, KnowledgeNode, .clinerules 문서화 규칙 추가 |
+| `e5ccbba` | feat: LLM 키워드 추출 프롬프트 개선 - 의미없는 단어 제거 |
+| `d71226b` | feat: 키워드 정규화 - 영문 대소문자 무시, 한글 띄어쓰기 무시 |
+| `49ea47a` | feat: 인스타그램/네이버 블로그 본문 파싱 지원 |
+| `b05345e` | docs: 인스타그램/네이버 블로그 파싱 변경 내역 추가 |
+| `0740453` | fix: 날짜별/주제별 필터 버튼 추가 (기간 선택 + topic 선택) |
+| `7f92478` | fix: 지식보관소 주제별 필터를 tags 필터에서 topic별 그룹핑으로 전환 |
+| `886ca3c` | fix: 엔터티 개념 제거 KnowledgeNode 리네임, .clinerules 문서화 규칙 추가 |
 | `7c81929` | fix: 지식그래프 초기 줌 padding 0.4, minZoom 0.3, 노드 간격 동적 확장 |
 | `e83746a` | docs: 변경 내역 및 테스트 결과 문서화 |
 | `fafb883` | feat: 단위 테스트 추가 + cleanTextFallback 버그 수정 |
@@ -204,27 +258,11 @@ Time:        0.883 s
 
 | 파일 | 주요 변경 |
 |---|---|
-| `app/api/knowledge/route.ts` | LLM 파싱 강화, topic 정규화, 임베딩 저장, 잘림 처리, createdAt ISO, cleanTextFallback 버그 수정 |
+| `app/api/knowledge/route.ts` | LLM 파싱 강화, topic 정규화, 임베딩 저장, 잘림 처리, createdAt ISO, cleanTextFallback 버그 수정, Instagram/Naver blog 파싱, 키워드 정규화, LLM 키워드 품질 개선 |
 | `app/page.tsx` | 그래프 엣지 로직 재작성 (임베딩 유사도 + substring fallback) |
 | `components/graph/knowledge-graph.tsx` | 노드 라벨/툴팁 개선, Entity→Knowledge 리네임, 패널 텍스트 수정, 줌/레이아웃 조정 |
-| `components/knowledge/knowledge-history.tsx` | 정렬 통일 (createdAt desc), createdAt ISO |
+| `components/knowledge/knowledge-history.tsx` | 정렬 통일 (createdAt desc), createdAt ISO, 날짜별/주제별 필터 버튼 추가 |
 | `__tests__/knowledge-utils.test.ts` | 26개 단위 테스트 (신규) |
 | `jest.config.ts` | Jest 설정 (신규) |
 | `.clinerules` | 문서화 규칙 (change-log.md 업데이트 의무) 추가 |
 | `docs/change-log.md` | 본 문서 |
-
----
-
-## 10. 지식 추가 본문 파싱 강화 (`app/api/knowledge/route.ts`)
-
-### 문제
-- 뉴스 외에 블로그, SNS 등 다양한 사이트의 본문 파싱이 제대로 동작하지 않음
-- 인스타그램은 og:title/description만 있고 본문이 별도 구조, 네이버 블로그는 iframe 내 콘텐츠
-- 일반 웹보다 정확도가 낮아 저장된 문서의 품질이 떨어짐
-
-### 수정
-1. **(커밋 `49ea47a`)** 플랫폼별 파싱 함수 추가:
-   - `fetchInstagramContent()`: og:title에서 캡션 추출, og:description에서 본문 추출, 좋아요/댓글/사용자명 등 노이즈 제거
-   - `fetchNaverBlogContent()`: `#mainFrame` iframe src 추출 후 내부 HTML 요청, `#postViewArea`/`.se-main-container`에서 본문 추출
-2. `fetchWebContent()` 상단에 Instagram/Naver blog 분기 추가
-3. 파싱 성공 시 `keywords`, `topic`도 함께 추출해 저장

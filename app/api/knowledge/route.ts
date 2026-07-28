@@ -236,26 +236,54 @@ async function fetchInstagramContent(url: string): Promise<{ title: string; cont
 
     // Collect carousel images - Instagram uses og:image for the first image
     const imageUrls: string[] = [];
-    const ogImage = $('meta[property="og:image"]').attr('content') || '';
-    if (ogImage && ogImage.startsWith('http')) {
-      imageUrls.push(ogImage);
-    }
-    // Look for additional carousel images in the HTML (various patterns)
+    const seen = new Set<string>();
+    const addImage = (src: string) => {
+      if (!src || !src.startsWith('http')) return;
+      const normalized = src.split('?')[0];
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        imageUrls.push(src);
+      }
+    };
+
+    // Collect from all og:image variants
+    $('meta[property="og:image"]').each((_, el) => {
+      const src = $(el).attr('content') || '';
+      addImage(src);
+    });
+    $('meta[property="og:image:url"]').each((_, el) => {
+      const src = $(el).attr('content') || '';
+      addImage(src);
+    });
+    $('meta[name="twitter:image"]').each((_, el) => {
+      const src = $(el).attr('content') || '';
+      addImage(src);
+    });
+
+    // Collect from img tags with broader patterns
     $('img').each((_, el) => {
       const src = $(el).attr('src') || '';
       if (!src || !src.startsWith('http')) return;
-      if (src.includes('cdninstagram.com') || src.includes('cdninstagram')) {
-        const cleanSrc = src.split('?')[0];
-        if (!imageUrls.includes(cleanSrc)) imageUrls.push(src);
+      // Instagram images often contain these patterns
+      if (src.includes('cdninstagram') || src.includes('scontent') || src.includes('fbcdn')) {
+        addImage(src);
       }
     });
-    // Also check for og:image:url pattern in meta tags
-    $('meta[property="og:image"]').each((_, el) => {
-      const src = $(el).attr('content') || '';
-      if (src && src.startsWith('http') && !imageUrls.includes(src)) {
-        imageUrls.push(src);
+
+    // Look for JSON-LD structured data which may contain image array
+    const jsonLd = $('script[type="application/ld+json"]').html() || '';
+    if (jsonLd) {
+      try {
+        const data = JSON.parse(jsonLd);
+        const images = Array.isArray(data.image) ? data.image : (data.image ? [data.image] : []);
+        images.forEach((img: any) => {
+          if (typeof img === 'string') addImage(img);
+          else if (img && img.url) addImage(img.url);
+        });
+      } catch (e) {
+        // ignore JSON parse error
       }
-    });
+    }
 
     return { title, content, imageUrls };
   } catch (e) {
@@ -423,7 +451,7 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
       try {
         const [titleResult, descResult] = await Promise.all([
           callNvidiaVisionModel([imageUrls[0]], '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.'),
-          callNvidiaVisionModel(imageUrls.slice(0, 10), '이 이미지들의 핵심 내용을 한국어로 요약해주세요. 각 이미지의 주요 텍스트, 차트, 인포그래픽 내용을 추출해주세요.')
+          callNvidiaVisionModel(imageUrls.slice(0, 8), '이 인스타그램 캐러셀 이미지들에 있는 모든 텍스트를 빠짐없이 한국어로 추출해주세요. 각 이미지에 있는 글자, 문구, 설명, 콘텐츠를 순서대로 추출하고 "이미지 N:" 형식으로 번호를 매겨주세요.')
         ]);
         if (titleResult && !/^none$/i.test(titleResult)) {
           visionTitleCandidate = titleResult.trim().split('\n')[0].trim();
@@ -457,6 +485,7 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
       : '';
     const combinedContent = trimmedContent + imageSection;
     const titleNote = visionTitleCandidate ? `\n[참고: 첫 이미지 문구: ${visionTitleCandidate}]` : '';
+
     const userPrompt = `URL: ${url}
 제목: ${rawTitle || '(제목 없음 - 이미지 또는 본문을 참고하여 생성)'}
 

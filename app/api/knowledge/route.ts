@@ -323,11 +323,16 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const rawTitle = $('meta[property="og:title"]').attr('content') ||
-                     $('meta[name="twitter:title"]').attr('content') ||
-                     $('h1').first().text() ||
-                     $('title').text() ||
-                     url;
+    const metaTitle = $('meta[property="og:title"]').attr('content') ||
+                     $('meta[name="twitter:title"]').attr('content') || '';
+    const h1Title = $('h1').first().text().trim();
+    const htmlTitle = $('title').text().trim();
+
+    // Avoid using overly long titles as-is (often full article text on blogs)
+    const rawTitle = (metaTitle && metaTitle.length < 120) ? metaTitle
+      : (h1Title && h1Title.length < 120) ? h1Title
+      : (htmlTitle && htmlTitle.length < 120) ? htmlTitle
+      : url;
 
     const removeSelectors = [
       'script', 'style', 'nav', 'footer', 'header', 'aside',
@@ -361,7 +366,7 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
 
     const rawContent = $('body').text().trim();
 
-    // Collect meaningful image URLs (exclude ads, icons)
+    // Collect meaningful image URLs (exclude ads, icons). First image may contain post title (e.g., Instagram carousel)
     const imageUrls: string[] = [];
     const adKeywords = ['ad', 'banner', 'promo', 'sponsor', '광고'];
     $('img').each((_, el) => {
@@ -379,6 +384,15 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
     });
 
     const trimmedContent = rawContent.substring(0, 4000);
+
+    // If first image exists, ask vision model for title candidate to handle carousel thumbnails
+    let visionTitleCandidate: string | null = null;
+    if (imageUrls.length > 0) {
+      const firstImgTitle = await callNvidiaVisionModel([imageUrls[0]], '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.');
+      if (firstImgTitle && !/^none$/i.test(firstImgTitle)) {
+        visionTitleCandidate = firstImgTitle.trim().split('\n')[0].trim();
+      }
+    }
     const systemPrompt = `당신은 웹 콘텐츠 분석 전문가입니다. 주어진 HTML 본문에서 핵심 정보만 추출하여 JSON 형식으로 반환하세요.
 
 반드시 다음 JSON 형식만 출력하세요 (다른 텍스트 없이):
@@ -402,9 +416,12 @@ ${trimmedContent}
 
 위 내용을 분석하여 JSON 형식으로 출력하세요.`;
 
-    // A2A: 텍스트 분석과 이미지 분석을 병렬 실행
+    const titlePromptAddition = visionTitleCandidate ? `\n[참고: 첫 이미지에서 감지된 문구: ${visionTitleCandidate}]` : '';
+    const textPrompt = userPrompt + titlePromptAddition;
+
+    // A2A: 텍스트 분석과 이미지 분석을 병렬 실행 (Agent-to-Agent 병렬 처리)
     const [llmResult, imageAnalysis] = await Promise.all([
-      callNvidiaLLM(userPrompt, systemPrompt),
+      callNvidiaLLM(textPrompt, systemPrompt),
       imageUrls.length > 0
         ? callNvidiaVisionModel(imageUrls.slice(0, 10), '이 이미지들의 핵심 내용을 한국어로 요약해주세요. 각 이미지의 주요 텍스트, 차트, 인포그래픽 내용을 추출해주세요.')
         : Promise.resolve(null)
@@ -427,7 +444,10 @@ ${trimmedContent}
         console.log('LLM raw topic payload:', jsonStr);
         const parsed = JSON.parse(jsonStr);
 
-        const title = parsed.title?.trim() || rawTitle.trim();
+        let title = parsed.title?.trim() || rawTitle.trim();
+        if ((!title || title === url || title.length > 100) && visionTitleCandidate) {
+          title = visionTitleCandidate;
+        }
         let content = parsed.content?.trim() || rawContent;
         let keywords: string[] = parsed.keywords || [];
 

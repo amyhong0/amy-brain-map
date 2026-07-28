@@ -220,11 +220,11 @@ export default function Home() {
 
   const runAgentWorkflow = useCallback(async (message: string) => {
     const steps: Array<{ agentId: string; task: string; spellLog: string; delay: number }> = [
-      { agentId: 'cauldron', task: `사용자 메시지 분석: "${message.substring(0, 30)}..."`, spellLog: `사용자 입력을 분석하여 적합한 에이전트에 작업 분배`, delay: 800 },
-      { agentId: 'desk', task: '지식 베이스에서 관련 문서 검색 중...', spellLog: '지식 베이스에서 관련 문서 검색 및 분석', delay: 1200 },
-      { agentId: 'library', task: '의미 기반 검색 및 문서 매칭...', spellLog: '의미 기반 검색으로 가장 관련성 높은 문서 선별', delay: 1000 },
-      { agentId: 'cauldron', task: '검색 결과 취합 및 LLM 응답 생성...', spellLog: '모든 에이전트의 결과를 취합하여 최종 응답 생성', delay: 1500 },
-      { agentId: 'archive', task: '대화 컨텍스트 저장 중...', spellLog: '대화 기록을 지식 보관소에 저장', delay: 500 },
+      { agentId: 'cauldron', task: `사용자 메시지 분석: "${message.substring(0, 30)}..."`, spellLog: '에이전트 간 A2A 협력 프로토콜 시작', delay: 600 },
+      { agentId: 'desk', task: '텍스트 분석 Agent 실행 (LLM)...', spellLog: 'A2A 텍스트 분석 에이전트가 본문/키워드/topic 추출 중', delay: 1000 },
+      { agentId: 'library', task: '비전 분석 Agent 실행 (Vision)...', spellLog: 'A2A 비전 에이전트가 이미지/캐러셀/인포그래픽 분석 중', delay: 1000 },
+      { agentId: 'cauldron', task: 'A2A 병렬 결과 취합 및 응답 생성...', spellLog: '텍스트/비전 Agent 결과를 통합하여 최종 지식 생성', delay: 1200 },
+      { agentId: 'archive', task: '지식 저장 및 컨텍스트 기록...', spellLog: 'A2A 파싱 결과를 지식 보관소에 저장 완료', delay: 500 },
     ];
     return steps;
   }, []);
@@ -328,24 +328,24 @@ export default function Home() {
                     if (urlInputRef.current?.value.trim()) {
                       const url = urlInputRef.current.value.trim();
                       setIsKnowledgeAdding(true);
-                      setCurrentTask('멀티 에이전트가 지식 분석 중...');
-                      addSpellLog('cauldron', '대마법사', '새 URL 지식 추가 작업을 에이전트에 분배', 'success');
-                      setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: '작업 분배 중...' } : a));
+                      setCurrentTask('A2A 병렬 에이전트가 지식 분석 중...');
+                      addSpellLog('cauldron', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
+                      setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
                       await new Promise(r => setTimeout(r, 500));
-                      setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: '웹 문서 분석 중...' } : a));
-                      addSpellLog('desk', '현자', '웹 페이지에서 콘텐츠 추출 및 분석 시작', 'success');
+                      setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: 'A2A 텍스트 분석 (LLM)...' } : a));
+                      addSpellLog('desk', '현자', 'A2A 텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
                       await new Promise(r => setTimeout(r, 800));
-                      setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: '의미 분석 및 태그 생성...' } : a));
-                      addSpellLog('library', '서고관리자', '추출된 콘텐츠의 의미 분석 및 키워드 추출', 'success');
+                      setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: 'A2A 비전 분석 (Vision)...' } : a));
+                      addSpellLog('library', '서고관리자', 'A2A 비전 에이전트: 이미지/캐러셀/인포그래픽 분석 중', 'success');
                       await new Promise(r => setTimeout(r, 600));
                       try {
                         const response = await fetch('/api/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '', type: 'web', url }) });
                         if (response.ok) {
                           const data = await response.json();
                           setAgents(prev => prev.map(a => a.id === 'archive' ? { ...a, status: 'working', currentTask: '지식 저장 중...' } : a));
-                          addSpellLog('archive', '기록가', `새로운 지식 저장 완료: ${data.document?.title || url}`, 'success');
+                          addSpellLog('archive', '기록가', `A2A 병렬 파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
                           await new Promise(r => setTimeout(r, 400));
-                          addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다: ${data.document?.title || url}`, timestamp: new Date() });
+                          addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다 (A2A): ${data.document?.title || url}`, timestamp: new Date() });
                           const res = await fetch('/api/knowledge');
                           const json = await res.json();
                           const sorted = (json.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

@@ -34,16 +34,16 @@ async function callNvidiaLLM(messages: { role: string; content: string }[]): Pro
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message } = body;
+    const { message, knowledgeDocs } = body;
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // 서버에서 직접 지식 문서 로드
-    const allDocs = await loadKnowledgeDocs();
-    const docs = allDocs.slice(0, 5);
-    const knowledgeContext = docs.map((doc: any, i: number) => {
+    // 클라이언트에서 전달받은 지식 문서 사용 (없으면 서버에서 로드)
+    const docs = knowledgeDocs || await loadKnowledgeDocs();
+    const targetDocs = docs.slice(0, 10);
+    const knowledgeContext = targetDocs.map((doc: any, i: number) => {
       let raw = (doc.content || doc.summary || '');
       // 1) HTML 태그 제거
       let clean = raw.replace(/<[^>]*>/g, ' ').replace(/&[^;]+;/g, ' ');
@@ -66,12 +66,12 @@ export async function POST(request: NextRequest) {
           if (/기자\s*$/.test(l)) return false;
           return true;
         });
-      // 7) 첫 10줄, 500자 제한
-      const mainContent = lines.slice(0, 10).join('\n').substring(0, 500);
+      // 7) 첫 30줄, 2000자 제한으로 확대
+      const mainContent = lines.slice(0, 30).join('\n').substring(0, 2000);
       return `[문서 ${i + 1}]\n제목: ${doc.title}\n내용: ${mainContent || '(내용 없음)'}\n태그: ${(doc.tags || []).join(', ')}`;
     }).join('\n\n');
 
-    const systemPrompt = docs.length > 0
+    const systemPrompt = targetDocs.length > 0
       ? `당신은 지식 베이스 기반 질의응답 AI입니다. 다음은 사용자가 저장한 지식 문서들입니다.
 
 참고할 지식 문서들:
@@ -80,7 +80,7 @@ ${knowledgeContext}
 중요 규칙:
 1. 반드시 한국어로만 답변하세요.
 2. 위 문서들의 내용을 읽고, 사용자 질문과 관련된 내용이 있으면 그 내용을 바탕으로 상세히 답변하세요.
-3. 문서 내용을 인용할 때는 반드시 [참조: 문서제목] 형식을 답변 중간에 포함하세요.
+3. 문서 내용을 인용할 때는 반드시 위에서 제공된 정확한 문서 제목을 그대로 사용하여 [참조: 정확한 문서 제목] 형식을 답변 중간에 포함하세요. (예: [참조: 뇌는 부정을 모른다])
 4. 관련 내용이 여러 문서에 있으면 모두 종합하여 답변하세요.
 5. 문서 내용에 없는 정보는 "저장된 지식에 없는 내용입니다"라고 답변하고 추가 정보를 요청하세요.
 6. 답변은 문서 내용을 요약/설명하는 형태로 자연스럽게 작성하세요.
@@ -96,7 +96,7 @@ ${knowledgeContext}
 
     return NextResponse.json({ 
       response: aiResponse,
-      documents: docs.map((doc: any) => ({
+      documents: targetDocs.map((doc: any) => ({
         id: doc.id,
         title: doc.title,
         content: doc.content || doc.summary || '',

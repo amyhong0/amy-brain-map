@@ -210,10 +210,14 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promi
       validBase64.map((b64) => callNvidiaVisionSingleImage(b64, ocrPrompt))
     );
 
-    const combined = results
-      .map((res, idx) => (res && res.length > 0) ? `[슬라이드 ${idx + 1} 이미지 텍스트]\n${res.trim()}` : null)
+    let combined = results
+      .map((res, idx) => (res && res.length > 0) ? `[이미지 ${idx + 1}]\n${res.trim()}` : null)
       .filter(Boolean)
       .join('\n\n');
+
+    if (imageUrls.length > targetUrls.length) {
+      combined += '\n\n(길이 제한으로 인해 잘림)';
+    }
 
     console.log(`[${requestId}] Combined multi-image vision result length:`, combined.length);
     return combined || null;
@@ -633,7 +637,7 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
 
     // Combine text + image descriptions for LLM
     const imageSection = visionTextResult
-      ? '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult
+      ? '\n\n' + visionTextResult
       : '';
     const combinedContent = trimmedContent + imageSection;
     const titleNote = visionTitleCandidate ? `\n[참고: 첫 이미지 문구: ${visionTitleCandidate}]` : '';
@@ -682,7 +686,7 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
 
         // 이미지 분석 결과를 content에 포함
         if (visionTextResult) {
-          content += '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult;
+          content += '\n\n' + visionTextResult;
         }
         const topic = normalizeKnowledgeTopic(normalizeKeyword(parsed.topic?.trim()), keywords) || keywords[0] || 'web';
 
@@ -716,7 +720,7 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
         const topic = normalizeKnowledgeTopic(undefined, keywords.map(normalizeKeyword)) || keywords[0] || 'web';
 
         if (visionTextResult) {
-          content += '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult;
+          content += '\n\n' + visionTextResult;
         }
 
         return { title, content, keywords, topic };
@@ -727,7 +731,7 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
     console.log('LLM returned null, using enhanced fallback');
     let fallbackContent = rawContent;
     if (visionTextResult) {
-      fallbackContent += '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult;
+      fallbackContent += '\n\n' + visionTextResult;
     }
 
     // 이미지 분석 텍스트를 보존하면서 노이즈 제거
@@ -829,7 +833,7 @@ export async function POST(request: NextRequest) {
           const dataUrl = `data:${file.type};base64,${b64}`;
           const ocrPrompt = '이 이미지 안에 있는 모든 글자를 빠짐없이 그대로(토씨 하나 틀리지 말고) 줄바꿈을 유지해서 한글/영어 텍스트만 전사(transcribe)해줘. 영문 번역이나 주석, 부연 설명은 절대로 붙이지 마.';
           const ocrResult = await callNvidiaVisionSingleImage(dataUrl, ocrPrompt);
-          content = ocrResult ? `[이미지 텍스트 분석 결과]\n${ocrResult}` : '';
+          content = ocrResult ? `${ocrResult}` : '';
           
           const titleResult = await callNvidiaVisionSingleImage(dataUrl, '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.');
           if (titleResult && !/^none$/i.test(titleResult)) {

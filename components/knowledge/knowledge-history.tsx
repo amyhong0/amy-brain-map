@@ -68,7 +68,14 @@ function KnowledgeModal({ doc, onClose, onUpdate }: { doc: KnowledgeDoc; onClose
         onUpdate?.(document);
         setIsEditing(false);
       } else {
-        alert('Failed to update knowledge document.');
+        let errMessage = 'Unknown error';
+        try {
+          const errData = await res.json();
+          errMessage = errData.error || res.statusText;
+        } catch(e) {
+          errMessage = res.statusText;
+        }
+        alert('Failed to update knowledge document. Error: ' + errMessage);
       }
     } catch (e) {
       console.error(e);

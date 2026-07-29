@@ -117,11 +117,11 @@ export async function loadKnowledgeDocs(): Promise<KnowledgeDoc[]> {
 // 단일 문서 저장
 export async function saveKnowledgeDoc(doc: KnowledgeDoc): Promise<string> {
   const metadata: Record<string, unknown> = {
-    id: doc.id,
-    title: doc.title,
-    type: doc.type,
+    id: doc.id || 'unknown',
+    title: doc.title || 'Untitled',
+    type: doc.type || 'web',
     tags: normalizeTags(doc.tags),
-    createdAt: doc.createdAt,
+    createdAt: doc.createdAt || new Date().toISOString(),
   };
 
   if (doc.summary) metadata.summary = doc.summary;

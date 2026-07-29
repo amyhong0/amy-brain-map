@@ -225,7 +225,7 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string, totalI
 
     const actualTotal = totalImages || imageUrls.length;
     if (actualTotal > targetUrls.length) {
-      combined += '\n\n(길이 제한으로 인해 잘림)';
+      combined += '\n\n(본문이 너무 길어서 잘렸습니다. 전체 내용은 원문 링크에서 확인하세요.)';
     }
 
     console.log(`[${requestId}] Combined multi-image vision result length:`, combined.length);

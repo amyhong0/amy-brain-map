@@ -299,20 +299,20 @@ export default function Home() {
         setAgents(prev => prev.map(a => a.id === 'orchestrator' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
         await new Promise(r => setTimeout(r, 500));
         setAgents(prev => prev.map(a => a.id === 'text_agent' ? { ...a, status: 'working', currentTask: '텍스트 분석 (LLM)...' } : a));
-        addSpellLog('text_agent', '룬 마스터', '텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
+        addSpellLog('text_agent', '룬 마스터', '본문/키워드/topic 추출 중', 'success');
         await new Promise(r => setTimeout(r, 800));
         setAgents(prev => prev.map(a => a.id === 'vision_agent' ? { ...a, status: 'working', currentTask: isImage ? '이미지 분석 중...' : '비전 분석 (Vision)...' } : a));
-        addSpellLog('vision_agent', '일루셔니스트', isImage ? '비전 에이전트: 이미지 분석 중' : '비전 에이전트: 이미지/캐러셀 분석 중', 'success');
+        addSpellLog('vision_agent', '일루셔니스트', isImage ? '이미지 분석 중' : '이미지/캐러셀 분석 중', 'success');
         await new Promise(r => setTimeout(r, 600));
       } else if (isPdf) {
         setCurrentTask('PDF 파일 분석 중...');
         setAgents(prev => prev.map(a => a.id === 'text_agent' ? { ...a, status: 'working', currentTask: 'PDF 파일 분석 중...' } : a));
-        addSpellLog('text_agent', '룬 마스터', '텍스트 에이전트: PDF 파일 분석 중', 'success');
+        addSpellLog('text_agent', '룬 마스터', 'PDF 파일 분석 중', 'success');
         await new Promise(r => setTimeout(r, 1400));
       } else {
         setCurrentTask('텍스트 분석 중...');
         setAgents(prev => prev.map(a => a.id === 'text_agent' ? { ...a, status: 'working', currentTask: '텍스트 분석 중...' } : a));
-        addSpellLog('text_agent', '룬 마스터', '텍스트 에이전트: 텍스트 분석 중', 'success');
+        addSpellLog('text_agent', '룬 마스터', '텍스트 분석 중', 'success');
         await new Promise(r => setTimeout(r, 1400));
       }
       try {

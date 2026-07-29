@@ -92,9 +92,61 @@ function normalizeKnowledgeTopic(topic?: string, keywords: string[] = []): strin
   return t;
 }
 
-async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promise<string | null> {
-  const requestId = `vis_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-  console.log(`[${requestId}] Vision API called with ${imageUrls.length} images:`, imageUrls.slice(0, 3).map(u => u.split('?')[0]));
+async function fetchSingleImageBase64(url: string): Promise<string | null> {
+  if (url.startsWith('data:')) return url;
+  if (!url.startsWith('http')) return null;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
+        'Referer': 'https://www.instagram.com/',
+        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+      }
+    });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    return `data:${contentType};base64,${base64}`;
+  } catch (e) {
+    console.error('Failed to download image:', e);
+    return null;
+  }
+}
+
+function cleanVisionOcrOutput(rawText: string): string {
+  if (!rawText) return '';
+  const lines = rawText.split('\n');
+  const cleaned: string[] = [];
+  
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^(이미지|사진)에 (있는|보이는) .*추출/i.test(trimmed)) continue;
+    if (/^이 이미지에는 텍스트가/i.test(trimmed)) continue;
+    if (/^이미지에 있는 모든 텍스트를/i.test(trimmed)) continue;
+    if (/^이 두 문구를 한글로 번역하면/i.test(trimmed)) continue;
+    if (/^이 두 단어는 이미지를 설명하는/i.test(trimmed)) continue;
+    if (/^위 텍스트는/i.test(trimmed)) continue;
+    if (/^이미지 안에 있는 모든 글자를/i.test(trimmed)) continue;
+    if (/^\*\*(Korean|English) Text:\*\*/i.test(trimmed)) continue;
+    if (/^\*\*English Translation:\*\*/i.test(trimmed)) continue;
+    if (/^Note:/i.test(trimmed)) continue;
+    
+    cleaned.push(trimmed);
+  }
+  
+  const deduped: string[] = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    if (i === 0 || cleaned[i] !== cleaned[i - 1]) {
+      deduped.push(cleaned[i]);
+    }
+  }
+  
+  return deduped.join('\n');
+}
+
+async function callNvidiaVisionSingleImage(dataUrl: string, prompt: string): Promise<string | null> {
   try {
     const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
@@ -109,26 +161,60 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promi
             role: 'user',
             content: [
               { type: 'text', text: prompt },
-              ...imageUrls.map(url => ({ type: 'image_url', image_url: { url } }))
+              { type: 'image_url', image_url: { url: dataUrl } }
             ]
           }
         ],
-        max_tokens: 4096,
-        temperature: 0.2,
+        max_tokens: 1024,
+        temperature: 0.1,
       }),
     });
 
-    console.log(`[${requestId}] Vision API status:`, apiResponse.status, apiResponse.statusText);
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
-      console.error(`[${requestId}] NVIDIA Vision API error:`, errText.slice(0, 500));
+      console.error('NVIDIA Vision API error:', errText.slice(0, 500));
       return null;
     }
 
     const data = await apiResponse.json();
-    const result = data.choices[0]?.message?.content || null;
-    console.log(`[${requestId}] Vision API result length:`, result?.length || 0, result?.slice(0, 200));
-    return result;
+    const rawContent = data.choices[0]?.message?.content || null;
+    return rawContent ? cleanVisionOcrOutput(rawContent) : null;
+  } catch (error) {
+    console.error('NVIDIA Vision API call failed:', error);
+    return null;
+  }
+}
+
+async function callNvidiaVisionModel(imageUrls: string[], prompt: string): Promise<string | null> {
+  const requestId = `vis_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  console.log(`[${requestId}] Vision API called with ${imageUrls.length} images`);
+  try {
+    const targetUrls = imageUrls.slice(0, 8);
+    const base64Results = await Promise.all(targetUrls.map(u => fetchSingleImageBase64(u)));
+    const validBase64 = base64Results.filter((b): b is string => b !== null);
+
+    if (validBase64.length === 0) {
+      console.warn(`[${requestId}] No valid images to process`);
+      return null;
+    }
+
+    if (validBase64.length === 1) {
+      return await callNvidiaVisionSingleImage(validBase64[0], prompt);
+    }
+
+    // NVIDIA Vision API supports max 1 image per request. Process each image concurrently.
+    const ocrPrompt = '이 이미지 안에 있는 모든 글자를 빠짐없이 그대로(토씨 하나 틀리지 말고) 줄바꿈을 유지해서 한글/영어 텍스트만 전사(transcribe)해줘. 영문 번역이나 주석, 부연 설명은 절대로 붙이지 마.';
+    const results = await Promise.all(
+      validBase64.map((b64) => callNvidiaVisionSingleImage(b64, ocrPrompt))
+    );
+
+    const combined = results
+      .map((res, idx) => (res && res.length > 0) ? `[슬라이드 ${idx + 1} 이미지 텍스트]\n${res.trim()}` : null)
+      .filter(Boolean)
+      .join('\n\n');
+
+    console.log(`[${requestId}] Combined multi-image vision result length:`, combined.length);
+    return combined || null;
   } catch (error) {
     console.error(`[${requestId}] NVIDIA Vision API call failed:`, error);
     return null;
@@ -217,88 +303,132 @@ function isNaverBlogUrl(url: string): boolean {
   return /blog\.naver\.com/i.test(url);
 }
 
+// HTML 엔티티를 디코딩하는 헬퍼 함수
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&apos;/g, "'");
+}
+
 async function fetchInstagramContent(url: string): Promise<{ title: string; content: string; imageUrls: string[] } | null> {
   try {
+    console.log(`[Instagram] Fetching content from: ${url}`);
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      headers: { 
+        'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+      },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[Instagram] Fetch failed with status: ${res.status}`);
+      return null;
+    }
     const html = await res.text();
+    console.log(`[Instagram] HTML length: ${html.length}`);
     const $ = cheerio.load(html);
-    const ogTitle = $('meta[property="og:title"]').attr('content') || '';
-    const ogDesc = $('meta[property="og:description"]').attr('content') || '';
-    const twitterDesc = $('meta[name="description"]').attr('content') || '';
+    
+    const ogTitle = decodeHtmlEntities($('meta[property="og:title"]').attr('content') || '');
+    const ogDesc = decodeHtmlEntities($('meta[property="og:description"]').attr('content') || '');
+    const twitterDesc = decodeHtmlEntities($('meta[name="description"]').attr('content') || '');
     const description = ogDesc || twitterDesc;
-    // ogTitle for Instagram is usually: "USERNAME | bio text on Instagram: photos and videos"
-    // For carousel posts, the actual title is often in the first image, so use a placeholder here
-    const title = '';  // Will be filled by Vision model from first image
-    // description contains likes/comments count + post text with hashtags
+    
+    console.log(`[Instagram] OG Title: ${ogTitle.substring(0, 100)}`);
+    console.log(`[Instagram] OG Description: ${description?.substring(0, 100)}`);
+    
     const content = description
+      .replace(/^\d+ likes?, \d+ comments? - [^\-]+ - [^:]+:\s*/, '')
       .replace(/^\d+ likes?, \d+ comments? - \S+ on \w+ \d+, \d+:\s*/, '')
       .replace(/- \S+ on Instagram:?/, '')
       .replace(/^["']|["']$/g, '')
       .trim();
 
-    // Collect carousel images - Instagram uses og:image for the first image
+    // Extract shortcode from URL
+    const shortcodeMatch = url.match(/instagram\.com\/(?:p|reel|tv)\/([^\/\?]+)/);
+    const shortcode = shortcodeMatch ? shortcodeMatch[1] : '';
+
     const imageUrls: string[] = [];
+    const altTexts: string[] = [];
     const seen = new Set<string>();
-    const addImage = (src: string) => {
-      if (!src || !src.startsWith('http')) return;
-      const normalized = src.split('?')[0];
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        imageUrls.push(src);
+
+    const decodeUrlStr = (str: string) => {
+      if (!str) return '';
+      return str
+        .replace(/\\\/|\\\//g, '/')
+        .replace(/\\/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/\\u0026/g, '&')
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
+        .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+    };
+
+    const addImage = (src: string, altText?: string) => {
+      if (!src) return;
+      const decoded = decodeUrlStr(src);
+      if (!decoded.startsWith('http')) return;
+
+      const idMatch = decoded.match(/\/([0-9]+_[0-9]+_[0-9]+_n\.jpg)/);
+      const key = idMatch ? idMatch[1] : decoded.split('?')[0];
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        imageUrls.push(decoded);
+        if (altText) altTexts.push(decodeUrlStr(altText));
       }
     };
 
-    // Collect from all og:image variants
+    // 1. Target the specific post object in JSON matching shortcode
+    if (shortcode) {
+      const occurrences = [...html.matchAll(new RegExp(`"code"\\s*:\\s*"${shortcode}"`, 'g'))];
+      console.log(`[Instagram] Shortcode "${shortcode}" matches: ${occurrences.length}`);
+      
+      // Search from bottom backwards to locate main post object node
+      for (let i = occurrences.length - 1; i >= 0; i--) {
+        const idx = occurrences[i].index;
+        const snippet = html.substring(idx, idx + 35000);
+        if (snippet.includes('"carousel_media"') || snippet.includes('"display_uri"')) {
+          console.log(`[Instagram] Matched target post snippet at index ${idx}`);
+          const uris = [...snippet.matchAll(/"display_uri"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+          const alts = [...snippet.matchAll(/"accessibility_caption"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+          
+          uris.forEach((uri, i) => {
+            addImage(uri, alts[i] || '');
+          });
+          break;
+        }
+      }
+    }
+
+    // 2. og:image as primary cover slide fallback
     $('meta[property="og:image"]').each((_, el) => {
       const src = $(el).attr('content') || '';
       addImage(src);
     });
-    $('meta[property="og:image:url"]').each((_, el) => {
-      const src = $(el).attr('content') || '';
-      addImage(src);
-    });
-    $('meta[name="twitter:image"]').each((_, el) => {
-      const src = $(el).attr('content') || '';
-      addImage(src);
+
+    console.log(`[Instagram] Total targeted post images collected: ${imageUrls.length}`);
+    imageUrls.forEach((imgUrl, i) => {
+      console.log(`[Instagram] Slide ${i+1}: ${imgUrl.substring(0, 80)}...`);
     });
 
-    // Collect from ALL img tags - be aggressive for Instagram carousels
-    $('img').each((_, el) => {
-      const src = $(el).attr('src') || '';
-      if (!src || !src.startsWith('http')) return;
-      // Skip obvious non-content images
-      if (src.includes('1x1') || src.includes('pixel') || src.includes('tracking') || src.includes('icon')) return;
-      addImage(src);
-    });
-
-    // Also look for background-image URLs in inline styles
-    $('[style*="background"]').each((_, el) => {
-      const style = $(el).attr('style') || '';
-      const urlMatch = style.match(/url\(['"]?(https?:\/\/[^'")\s]+)['"]?\)/);
-      if (urlMatch) addImage(urlMatch[1]);
-    });
-
-    // Look for JSON-LD structured data which may contain image array
-    const jsonLd = $('script[type="application/ld+json"]').html() || '';
-    if (jsonLd) {
-      try {
-        const data = JSON.parse(jsonLd);
-        const images = Array.isArray(data.image) ? data.image : (data.image ? [data.image] : []);
-        images.forEach((img: any) => {
-          if (typeof img === 'string') addImage(img);
-          else if (img && img.url) addImage(img.url);
-        });
-      } catch (e) {
-        // ignore JSON parse error
-      }
+    // Append built-in accessibility captions to content if present
+    let extraAltContent = '';
+    if (altTexts.length > 0) {
+      const cleanedAlts = altTexts.map((alt, i) => {
+        const textMatch = alt.match(/문구:\s*'([^']+)'/) || alt.match(/['"]([^'"]{5,})['"]/);
+        return textMatch ? `슬라이드 ${i+1}: ${textMatch[1]}` : `슬라이드 ${i+1}: ${alt}`;
+      });
+      extraAltContent = '\n\n[이미지 텍스트 캡션]\n' + cleanedAlts.join('\n');
     }
 
-    return { title, content, imageUrls };
+    return { title: '', content: content + extraAltContent, imageUrls };
   } catch (e) {
-    console.error('Instagram fetch failed:', e);
+    console.error('[Instagram] Fetch failed:', e);
     return null;
   }
 }
@@ -457,25 +587,28 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
 
     // If first image exists, analyze it to get title candidate and content description (especially for carousels)
     let visionTitleCandidate: string | null = null;
-    let imageDescriptions: string[] = [];
+    let visionTextResult: string | null = null;
     if (imageUrls.length > 0) {
       console.log(`[${new URL(url).hostname}] Starting vision analysis for ${imageUrls.length} images`);
+      console.log(`[${new URL(url).hostname}] First image URL: ${imageUrls[0].substring(0, 80)}...`);
       try {
         const [titleResult, descResult] = await Promise.all([
           callNvidiaVisionModel([imageUrls[0]], '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.'),
-          callNvidiaVisionModel(imageUrls.slice(0, 8), '이 인스타그램 캐러셀 이미지들에 있는 모든 텍스트를 빠짐없이 한국어로 추출해주세요. 각 이미지에 있는 글자, 문구, 설명, 콘텐츠를 순서대로 추출하고 "이미지 N:" 형식으로 번호를 매겨주세요.')
+          callNvidiaVisionModel(imageUrls.slice(0, 8), '이 인스타그램 캐러셀 이미지들에 있는 모든 텍스트를 빠짐없이 한국어로 추출해주세요.')
         ]);
         console.log(`[${new URL(url).hostname}] Vision title result:`, titleResult?.slice(0, 100));
         console.log(`[${new URL(url).hostname}] Vision desc result length:`, descResult?.length || 0);
+        console.log(`[${new URL(url).hostname}] Vision desc result preview:`, descResult?.substring(0, 200));
+        
         if (titleResult && !/^none$/i.test(titleResult)) {
           visionTitleCandidate = titleResult.trim().split('\n')[0].trim();
+          console.log(`[${new URL(url).hostname}] Vision title candidate:`, visionTitleCandidate);
         }
         if (descResult) {
-          imageDescriptions = descResult.split('\n').filter((line: string) => line.trim().length > 0).slice(0, 10);
+          visionTextResult = descResult;
         }
-        console.log(`[${new URL(url).hostname}] Image descriptions count:`, imageDescriptions.length);
       } catch (e) {
-        console.error('Vision analysis failed:', e);
+        console.error(`[${new URL(url).hostname}] Vision analysis failed:`, e);
       }
     } else {
       console.log(`[${new URL(url).hostname}] No images found for vision analysis`);
@@ -497,8 +630,8 @@ async function fetchWebContent(url: string): Promise<{ title: string; content: s
 }`;
 
     // Combine text + image descriptions for LLM
-    const imageSection = imageDescriptions.length > 0
-      ? '\n\n[이미지 내용]\n' + imageDescriptions.map((d, i) => `이미지${i + 1}: ${d}`).join('\n')
+    const imageSection = visionTextResult
+      ? '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult
       : '';
     const combinedContent = trimmedContent + imageSection;
     const titleNote = visionTitleCandidate ? `\n[참고: 첫 이미지 문구: ${visionTitleCandidate}]` : '';
@@ -546,8 +679,8 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
         }
 
         // 이미지 분석 결과를 content에 포함
-        if (imageDescriptions.length > 0) {
-          content += '\n\n[이미지 분석]\n' + imageDescriptions.join('\n');
+        if (visionTextResult) {
+          content += '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult;
         }
         const topic = normalizeKnowledgeTopic(normalizeKeyword(parsed.topic?.trim()), keywords) || keywords[0] || 'web';
 
@@ -580,8 +713,8 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
         if (keywords.length === 0) keywords = extractKeywordsFromContent(content);
         const topic = normalizeKnowledgeTopic(undefined, keywords.map(normalizeKeyword)) || keywords[0] || 'web';
 
-        if (imageDescriptions.length > 0) {
-          content += '\n\n[이미지 분석]\n' + imageDescriptions.join('\n');
+        if (visionTextResult) {
+          content += '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult;
         }
 
         return { title, content, keywords, topic };
@@ -591,17 +724,17 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
     // LLM 실패 시 향상된 fallback
     console.log('LLM returned null, using enhanced fallback');
     let fallbackContent = rawContent;
-    if (imageDescriptions.length > 0) {
-      fallbackContent += '\n\n[이미지 분석]\n' + imageDescriptions.join('\n');
+    if (visionTextResult) {
+      fallbackContent += '\n\n[이미지 텍스트 분석 결과]\n' + visionTextResult;
     }
 
     // 이미지 분석 텍스트를 보존하면서 노이즈 제거
     let fallbackClean: { title: string; content: string; keywords: string[] };
-    if (imageDescriptions.length > 0) {
+    if (visionTextResult) {
       const lines = fallbackContent.split('\n')
         .map(l => l.trim())
         .filter(line => {
-          if (line.length < 15 && !line.startsWith('이미지')) return false;
+          if (line.length < 5 && !line.startsWith('이미지') && !line.startsWith('[')) return false;
           if (/^[가-힣]{2,4}\s*기자$/.test(line)) return false;
           if (/무단전재|재배포|copyright/i.test(line)) return false;
           if (/핫클릭|더보기|관련기사|추천기사/i.test(line)) return false;

@@ -59,6 +59,7 @@ export default function Home() {
   const [spellLogs, setSpellLogs] = useState<SpellLog[]>([]);
   const spellLogIdRef = useRef(0);
   const urlInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const savedLogs = localStorage.getItem('spellLogs');
@@ -322,49 +323,66 @@ export default function Home() {
               </div>
               <div className="glass-card p-5">
                 <div className="section-title mb-3">지식 추가</div>
-                <div className="flex gap-2">
-                  <input ref={urlInputRef} type="text" placeholder="URL을 입력하세요 (예: https://example.com)" className="flex-1 px-3 py-2 bg-white/5 border border-purple-500/30 rounded-lg text-white text-xs placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:bg-white/10 transition-all" disabled={isKnowledgeAdding} />
-                  <button onClick={async () => {
-                    if (urlInputRef.current?.value.trim()) {
-                      const url = urlInputRef.current.value.trim();
-                      setIsKnowledgeAdding(true);
-                      setCurrentTask('A2A 병렬 에이전트가 지식 분석 중...');
-                      addSpellLog('cauldron', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
-                      setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
-                      await new Promise(r => setTimeout(r, 500));
-                      setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: 'A2A 텍스트 분석 (LLM)...' } : a));
-                      addSpellLog('desk', '현자', 'A2A 텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
-                      await new Promise(r => setTimeout(r, 800));
-                      setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: 'A2A 비전 분석 (Vision)...' } : a));
-                      addSpellLog('library', '서고관리자', 'A2A 비전 에이전트: 이미지/캐러셀/인포그래픽 분석 중', 'success');
-                      await new Promise(r => setTimeout(r, 600));
-                      try {
-                        const response = await fetch('/api/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '', type: 'web', url }) });
-                        if (response.ok) {
-                          const data = await response.json();
-                          setAgents(prev => prev.map(a => a.id === 'archive' ? { ...a, status: 'working', currentTask: '지식 저장 중...' } : a));
-                          addSpellLog('archive', '기록가', `A2A 병렬 파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
-                          await new Promise(r => setTimeout(r, 400));
-                          addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다 (A2A): ${data.document?.title || url}`, timestamp: new Date() });
-                          const res = await fetch('/api/knowledge');
-                          const json = await res.json();
-                          const sorted = (json.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                          setKnowledgeDocs(sorted as KnowledgeDoc[]);
-                          addSpellLog('cauldron', '대마법사', '지식 추가 워크플로우 완료', 'success');
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input ref={urlInputRef} type="text" placeholder="URL을 입력하세요 (예: https://example.com)" className="flex-1 px-3 py-2 bg-white/5 border border-purple-500/30 rounded-lg text-white text-xs placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:bg-white/10 transition-all" disabled={isKnowledgeAdding} />
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input type="file" ref={fileInputRef} accept=".jpg,.jpeg,.png,.pdf,.docx,.md" className="flex-1 px-3 py-2 bg-white/5 border border-purple-500/30 rounded-lg text-white text-xs focus:outline-none focus:border-purple-500 transition-all file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700" disabled={isKnowledgeAdding} />
+                    <button onClick={async () => {
+                      if (urlInputRef.current?.value.trim() || fileInputRef.current?.files?.[0]) {
+                        const url = urlInputRef.current?.value.trim() || '';
+                        const file = fileInputRef.current?.files?.[0];
+                        setIsKnowledgeAdding(true);
+                        setCurrentTask('A2A 병렬 에이전트가 지식 분석 중...');
+                        addSpellLog('cauldron', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
+                        setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
+                        await new Promise(r => setTimeout(r, 500));
+                        setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: 'A2A 텍스트 분석 (LLM)...' } : a));
+                        addSpellLog('desk', '현자', 'A2A 텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
+                        await new Promise(r => setTimeout(r, 800));
+                        setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: 'A2A 비전 분석 (Vision)...' } : a));
+                        addSpellLog('library', '서고관리자', 'A2A 비전 에이전트: 이미지/캐러셀/인포그래픽 분석 중', 'success');
+                        await new Promise(r => setTimeout(r, 600));
+                        try {
+                          let response;
+                          if (file) {
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            if (url) formData.append('url', url);
+                            response = await fetch('/api/knowledge', { method: 'POST', body: formData });
+                          } else {
+                            response = await fetch('/api/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '', type: 'web', url }) });
+                          }
+                          
+                          if (response.ok) {
+                            const data = await response.json();
+                            setAgents(prev => prev.map(a => a.id === 'archive' ? { ...a, status: 'working', currentTask: '지식 저장 중...' } : a));
+                            addSpellLog('archive', '기록가', `A2A 병렬 파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
+                            await new Promise(r => setTimeout(r, 400));
+                            addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다 (A2A): ${data.document?.title || file?.name || url}`, timestamp: new Date() });
+                            const res = await fetch('/api/knowledge');
+                            const json = await res.json();
+                            const sorted = (json.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                            setKnowledgeDocs(sorted as KnowledgeDoc[]);
+                            addSpellLog('cauldron', '대마법사', '지식 추가 워크플로우 완료', 'success');
+                          }
+                        } catch (error) {
+                          addSpellLog('desk', '현자', '지식 추출 중 오류가 발생했습니다.', 'warning');
+                          addMessage({ id: `err-${Date.now()}`, role: 'system', content: `⚠️ 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, timestamp: new Date() });
+                        } finally {
+                          setIsKnowledgeAdding(false);
+                          setCurrentTask('');
+                          setAgents(prev => prev.map(a => ({ ...a, status: 'idle', currentTask: undefined })));
+                          if (urlInputRef.current) urlInputRef.current.value = '';
+                          if (fileInputRef.current) fileInputRef.current.value = '';
                         }
-                      } catch (error) {
-                        addSpellLog('desk', '현자', '지식 추출 중 오류가 발생했습니다.', 'warning');
-                        addMessage({ id: `err-${Date.now()}`, role: 'system', content: `⚠️ 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, timestamp: new Date() });
-                      } finally {
-                        setIsKnowledgeAdding(false);
-                        setCurrentTask('');
-                        setAgents(prev => prev.map(a => ({ ...a, status: 'idle', currentTask: undefined })));
-                        if (urlInputRef.current) urlInputRef.current.value = '';
                       }
-                    }
-                  }} disabled={isKnowledgeAdding} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
-                    <span>추가하기</span>
-                  </button>
+                    }} disabled={isKnowledgeAdding} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap">
+                      <span>추가하기</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 px-1">지원 확장자: .jpg, .png, .pdf, .docx, .md 등</p>
                 </div>
                 {isKnowledgeAdding && (
                   <div className="flex items-center justify-center gap-2 mt-2 text-purple-300 text-xs">

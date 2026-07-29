@@ -74,6 +74,7 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [selectedDoc, setSelectedDoc] = useState<KnowledgeDoc | null>(null);
   const [urlInput, setUrlInput] = useState('');
+  const [fileInput, setFileInput] = useState<File | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDoc[]>([]);

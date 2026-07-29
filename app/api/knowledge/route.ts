@@ -695,7 +695,7 @@ ${instagramData ? '인스타그램 게시글의 경우, 이미지에 제목이 �
           .trim();
 
         if (rawContent.length > 4000 && content.length < rawContent.length * 0.5) {
-          content += '\n\n... (본문이 너무 길어서 잘렸습니다. 전체 내용은 원문 링크에서 확인하세요.)';
+          content += '\n\n... (본문이 너무 길어서 잘렸습니다. 전체 내용은 원문에서 확인하세요.)';
         }
 
         return { title, content, keywords, topic };
@@ -861,7 +861,17 @@ export async function POST(request: NextRequest) {
                     const parsed = JSON.parse(jsonStr);
                     if (parsed.title) title = parsed.title;
                     if (parsed.keywords) tags = parsed.keywords;
-                    if (parsed.content) content = parsed.content + (content.length > parsed.content.length ? '\n\n---\n[원본 텍스트 일부]\n' + content.substring(0, 1000) : '');
+                    if (parsed.content) {
+                        const rawContent = content;
+                        if (type === 'image') {
+                            content = rawContent;
+                        } else {
+                            content = parsed.content + '\n\n---\n[원본 텍스트]\n' + rawContent;
+                        }
+                        if (content.length > 4000) {
+                            content = content.substring(0, 4000) + '\n\n... (본문이 너무 길어서 잘렸습니다. 전체 내용은 원문에서 확인하세요.)';
+                        }
+                    }
                 } catch (e) {
                     console.error("LLM JSON parsing failed", e);
                 }

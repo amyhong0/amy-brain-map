@@ -34,7 +34,7 @@ interface SpellLog {
 const ZONES: ZoneConfig[] = [
   {
     id: 'cauldron',
-    name: '총괄 마법사',
+    name: '대마법사',
     role: 'Task Distribution',
     emoji: '🧙‍♂️',
     color: '#9C27B0',
@@ -46,7 +46,7 @@ const ZONES: ZoneConfig[] = [
   },
   {
     id: 'desk',
-    name: '문헌 마법사',
+    name: '룬 마스터',
     role: 'Knowledge Analysis',
     emoji: '🔮',
     color: '#4CAF50',
@@ -58,7 +58,7 @@ const ZONES: ZoneConfig[] = [
   },
   {
     id: 'library',
-    name: '환영 마법사',
+    name: '일루셔니스트',
     role: 'Knowledge Retrieval',
     emoji: '⚗️',
     color: '#2196F3',
@@ -82,7 +82,7 @@ const ZONES: ZoneConfig[] = [
   },
   {
     id: 'archive',
-    name: '기록 마법사',
+    name: '기록가',
     role: 'Data Storage',
     emoji: '📚',
     color: '#FF9800',

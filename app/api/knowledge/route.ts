@@ -191,7 +191,8 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string, totalI
   const requestId = `vis_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
   console.log(`[${requestId}] Vision API called with ${imageUrls.length} images`);
   try {
-    const targetUrls = imageUrls.slice(0, 4);
+    // 1. 최대 10장까지만 분석하도록 제한 (인스타그램 기본 최대치 10장 대응)
+    const targetUrls = imageUrls.slice(0, 10);
     const base64Results = await Promise.all(targetUrls.map(u => fetchSingleImageBase64(u)));
     const validBase64 = base64Results.filter((b): b is string => b !== null);
 

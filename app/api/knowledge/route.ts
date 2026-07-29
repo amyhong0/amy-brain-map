@@ -207,9 +207,16 @@ async function callNvidiaVisionModel(imageUrls: string[], prompt: string, totalI
 
     // NVIDIA Vision API supports max 1 image per request. Process each image concurrently.
     const ocrPrompt = '이 이미지 안에 있는 모든 글자를 빠짐없이 그대로(토씨 하나 틀리지 말고) 줄바꿈을 유지해서 한글/영어 텍스트만 전사(transcribe)해줘. 영문 번역이나 주석, 부연 설명은 절대로 붙이지 마.';
-    const results = await Promise.all(
-      validBase64.map((b64) => callNvidiaVisionSingleImage(b64, ocrPrompt))
-    );
+    const results: (string | null)[] = [];
+    for (const b64 of validBase64) {
+      try {
+        const res = await callNvidiaVisionSingleImage(b64, ocrPrompt);
+        results.push(res);
+      } catch (e) {
+        console.error(`[${requestId}] Single image vision failed:`, e);
+        results.push(null);
+      }
+    }
 
     let combined = results
       .map((res, idx) => (res && res.length > 0) ? `[이미지 ${idx + 1}]\n${res.trim()}` : null)

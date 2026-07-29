@@ -145,6 +145,7 @@ export async function saveKnowledgeDoc(doc: KnowledgeDoc): Promise<string> {
     const blob = await put(pathname, mdContent, {
       access: 'public',
       contentType: 'text/markdown',
+      allowOverwrite: true,
     });
 
     return blob.url;

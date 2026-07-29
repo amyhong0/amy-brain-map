@@ -42,7 +42,35 @@ export async function POST(request: NextRequest) {
 
     // 클라이언트에서 전달받은 지식 문서 사용 (없으면 서버에서 로드)
     const docs = knowledgeDocs || await loadKnowledgeDocs();
-    const targetDocs = docs.slice(0, 10);
+    
+    // 키워드 및 시간 기반 스코어링 로직
+    const targetDocs = docs.map((doc: any) => {
+      let score = 0;
+      const docDate = new Date(doc.createdAt);
+      const today = new Date();
+      const yesterday = new Date(Date.now() - 86400000);
+      
+      const isToday = today.toDateString() === docDate.toDateString();
+      const isYesterday = yesterday.toDateString() === docDate.toDateString();
+
+      if (message.includes('오늘') && isToday) score += 50;
+      if (message.includes('어제') && isYesterday) score += 50;
+      
+      const tokens = message.split(/\s+/);
+      for (const token of tokens) {
+        if (token.length < 2) continue;
+        if (doc.title?.includes(token)) score += 10;
+        if (doc.tags && doc.tags.some((t: string) => t.includes(token))) score += 5;
+        if (doc.summary && doc.summary.includes(token)) score += 2;
+        if (doc.content && doc.content.includes(token)) score += 1;
+      }
+      
+      return { doc, score };
+    })
+    .sort((a: any, b: any) => b.score - a.score)
+    .map((item: any) => item.doc)
+    .slice(0, 10);
+
     const knowledgeContext = targetDocs.map((doc: any, i: number) => {
       let raw = (doc.content || doc.summary || '');
       // 1) HTML 태그 제거

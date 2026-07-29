@@ -141,12 +141,28 @@ function RelationshipEdge({
 // ── Summary Panel ──────────────────────────────────────────────────
 function SummaryPanel({ nodes, edges, onClose }: { nodes: Node[]; edges: Edge[]; onClose: () => void }) {
   const typeStats = useMemo(() => {
-    const map = new Map<string, number>();
+    const normalizedCounts = new Map<string, number>();
+    const originalNames = new Map<string, string>();
+    
     nodes.forEach((n) => {
       const t = (n.data?.metadata as any)?.topic || n.data?.type || 'unknown';
-      map.set(t, (map.get(t) || 0) + 1);
+      const key = String(t);
+      const normalizedKey = key.toLowerCase().replace(/\s+/g, '');
+      
+      if (!originalNames.has(normalizedKey)) {
+        originalNames.set(normalizedKey, key);
+      }
+      
+      normalizedCounts.set(normalizedKey, (normalizedCounts.get(normalizedKey) || 0) + 1);
     });
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+
+    const displayMap = new Map<string, number>();
+    normalizedCounts.forEach((count, normalizedKey) => {
+      const displayName = originalNames.get(normalizedKey) || normalizedKey;
+      displayMap.set(displayName, count);
+    });
+    
+    return [...displayMap.entries()].sort((a, b) => b[1] - a[1]);
   }, [nodes]);
 
   const relationshipStats = useMemo(() => {

@@ -91,12 +91,13 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
     }
   }, []);
 
-  const saveKnowledgeDocAPI = useCallback(async (doc: KnowledgeDoc) => {
+  const saveKnowledgeDocAPI = useCallback(async (data: FormData | KnowledgeDoc) => {
     try {
+      const isFormData = data instanceof FormData;
       const response = await fetch('/api/knowledge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(doc),
+        headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+        body: isFormData ? (data as FormData) : JSON.stringify(data),
       });
       if (response.ok) {
         const data = await response.json();
@@ -178,17 +179,34 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
   }, [docs, selectedTopic]);
 
   const handleAddKnowledge = async () => {
-    if (!urlInput.trim()) return;
+    if (!urlInput.trim() && !fileInput) return;
     setIsProcessing(true);
-    const newDoc: KnowledgeDoc = {
-      id: `doc-${Date.now()}`, title: '', type: 'web', tags: [],
-      createdAt: new Date().toISOString(), url: urlInput,
-    };
+    
     try {
-      const success = await saveKnowledgeDocAPI(newDoc);
-      if (success) { setUrlInput(''); setIsAdding(false); }
-      else { alert('지식 저장에 실패했습니다.'); }
-    } finally { setIsProcessing(false); }
+      let success = false;
+      if (fileInput) {
+        const formData = new FormData();
+        formData.append('file', fileInput);
+        if (urlInput.trim()) formData.append('url', urlInput);
+        success = await saveKnowledgeDocAPI(formData);
+      } else {
+        const newDoc: KnowledgeDoc = {
+          id: `doc-${Date.now()}`, title: '', type: 'web', tags: [],
+          createdAt: new Date().toISOString(), url: urlInput,
+        };
+        success = await saveKnowledgeDocAPI(newDoc);
+      }
+
+      if (success) { 
+        setUrlInput(''); 
+        setFileInput(null);
+        setIsAdding(false); 
+      } else { 
+        alert('지식 저장에 실패했습니다.'); 
+      }
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const handleDeleteDoc = async (docId: string) => {
@@ -232,12 +250,19 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
               <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)}
                 placeholder="URL을 입력하세요"
                 className="w-full px-3 py-2 bg-white/5 border border-purple-500/30 rounded-lg text-white text-xs placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-all" />
+              
+              <input type="file" onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+                accept=".jpg,.jpeg,.png,.pdf,.docx,.md"
+                className="w-full px-3 py-2 bg-white/5 border border-purple-500/30 rounded-lg text-white text-xs focus:outline-none focus:border-purple-500 transition-all file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700" />
+              
+              <p className="text-[10px] text-gray-400 px-1">지원 확장자: .jpg, .png, .pdf, .docx, .md 등</p>
+
               <div className="flex gap-2">
                 <button onClick={handleAddKnowledge} disabled={isProcessing}
                   className="flex-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                   {isProcessing ? '처리 중...' : '추가하기'}
                 </button>
-                <button onClick={() => { setUrlInput(''); setIsAdding(false); }}
+                <button onClick={() => { setUrlInput(''); setFileInput(null); setIsAdding(false); }}
                   className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded-lg transition-all">취소</button>
               </div>
             </motion.div>

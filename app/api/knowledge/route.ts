@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadKnowledgeDocs, saveKnowledgeDoc, deleteKnowledgeDoc, KnowledgeDoc } from '@/lib/utils/knowledge-storage';
 import * as cheerio from 'cheerio';
+import mammoth from 'mammoth';
+import pdfParse from 'pdf-parse';
 
 // 텍스트 정제 함수 (LLM 없이도 사용)
 function cleanTextFallback(text: string): { title: string; content: string; keywords: string[] } {
@@ -792,15 +794,98 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    let { title, type, tags, url, content, summary }: KnowledgeDoc = body;
-
-    if (url && (!content || content === url)) {
-      const webData = await fetchWebContent(url);
-      if (!title || title.includes('문서') || title === url) title = webData.title;
-      content = webData.content || cleanTextFallback(webData.content).content;
-      if (webData.keywords && webData.keywords.length > 0) tags = webData.keywords;
-      summary = content.substring(0, 100) + '...';
+    const contentType = request.headers.get('content-type') || '';
+    
+    let title = '';
+    let type = 'web';
+    let tags: string[] = [];
+    let url = '';
+    let content = '';
+    let summary = '';
+    
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      url = formData.get('url') as string || '';
+      const file = formData.get('file') as File | null;
+      
+      if (file) {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const fileName = file.name;
+        title = fileName;
+        type = 'document';
+        
+        if (fileName.toLowerCase().endsWith('.pdf')) {
+          type = 'pdf';
+          const pdfData = await pdfParse(buffer);
+          content = pdfData.text;
+        } else if (fileName.toLowerCase().endsWith('.docx')) {
+          const docxData = await mammoth.extractRawText({ buffer });
+          content = docxData.value;
+        } else if (fileName.toLowerCase().endsWith('.md')) {
+          content = buffer.toString('utf-8');
+        } else if (/\.(jpg|jpeg|png)$/i.test(fileName)) {
+          type = 'image';
+          const b64 = buffer.toString('base64');
+          const dataUrl = `data:${file.type};base64,${b64}`;
+          const ocrPrompt = '이 이미지 안에 있는 모든 글자를 빠짐없이 그대로(토씨 하나 틀리지 말고) 줄바꿈을 유지해서 한글/영어 텍스트만 전사(transcribe)해줘. 영문 번역이나 주석, 부연 설명은 절대로 붙이지 마.';
+          const ocrResult = await callNvidiaVisionSingleImage(dataUrl, ocrPrompt);
+          content = ocrResult ? `[이미지 텍스트 분석 결과]\n${ocrResult}` : '';
+          
+          const titleResult = await callNvidiaVisionSingleImage(dataUrl, '이 이미지에 제목이나 핵심 문구가 있으면 한국어로 추출해주세요. 없다면 "none"이라고만 출력하세요.');
+          if (titleResult && !/^none$/i.test(titleResult)) {
+            title = titleResult.trim().split('\n')[0].trim();
+          }
+        }
+        
+        if (content) {
+            const systemPrompt = `당신은 문서 분석 전문가입니다. 주어진 본문에서 핵심 정보만 추출하여 JSON 형식으로 반환하세요.
+반드시 다음 JSON 형식만 출력하세요 (다른 텍스트 없이):
+{
+  "title": "50자 이내의 핵심 제목. 원본 제목이 주어졌다면 그대로 유지하되, 내용에 맞게 다듬어도 됩니다.",
+  "content": "800자 이내의 핵심 요약",
+  "keywords": ["핵심 키워드 1", "핵심 키워드 2", "핵심 키워드 3"],
+  "topic": "핵심 기술/분야 1단어"
+}`;
+            const userPrompt = `파일명/원제목: ${title}\n본문 내용:\n${content.substring(0, 4000)}`;
+            const llmResult = await callNvidiaLLM(userPrompt, systemPrompt);
+            if (llmResult) {
+                let jsonStr = llmResult;
+                const jsonMatch = llmResult.match(/```(?:json)?\s*([\s\S]*?)```/);
+                if (jsonMatch) jsonStr = jsonMatch[1].trim();
+                else {
+                    const firstBrace = llmResult.indexOf('{');
+                    const lastBrace = llmResult.lastIndexOf('}');
+                    if (firstBrace !== -1 && lastBrace !== -1) jsonStr = llmResult.substring(firstBrace, lastBrace + 1);
+                }
+                try {
+                    const parsed = JSON.parse(jsonStr);
+                    if (parsed.title) title = parsed.title;
+                    if (parsed.keywords) tags = parsed.keywords;
+                    if (parsed.content) content = parsed.content + (content.length > parsed.content.length ? '\n\n---\n[원본 텍스트 일부]\n' + content.substring(0, 1000) : '');
+                } catch (e) {
+                    console.error("LLM JSON parsing failed", e);
+                }
+            }
+            if (tags.length === 0) tags = extractKeywordsFromContent(content);
+            summary = content.substring(0, 100) + '...';
+        }
+      }
+    } else {
+      const body = await request.json();
+      title = body.title;
+      type = body.type;
+      tags = body.tags;
+      url = body.url;
+      content = body.content;
+      summary = body.summary;
+  
+      if (url && (!content || content === url)) {
+        const webData = await fetchWebContent(url);
+        if (!title || title.includes('문서') || title === url) title = webData.title;
+        content = webData.content || cleanTextFallback(webData.content).content;
+        if (webData.keywords && webData.keywords.length > 0) tags = webData.keywords;
+        summary = content.substring(0, 100) + '...';
+      }
     }
 
     if (!title || !type) {

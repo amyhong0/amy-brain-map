@@ -406,7 +406,7 @@ async function fetchInstagramContent(url: string): Promise<{ title: string; cont
       // Search from bottom backwards to locate main post object node
       for (let i = occurrences.length - 1; i >= 0; i--) {
         const idx = occurrences[i].index;
-        const snippet = html.substring(idx, idx + 35000);
+        const snippet = html.substring(idx, idx + 150000);
         let totalImages = 0;
         if (snippet.includes('"carousel_media"') || snippet.includes('"display_uri"')) {
           console.log(`[Instagram] Matched target post snippet at index ${idx}`);

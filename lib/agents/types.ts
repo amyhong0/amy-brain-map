@@ -1,5 +1,5 @@
-export type AgentStatus = 'idle' | 'working' | 'completed';
-export type TaskType = 'document_process' | 'knowledge_analyze' | 'develop' | 'debug';
+export type AgentStatus = 'idle' | 'working' | 'completed' | 'failed';
+export type TaskType = 'orchestrate' | 'text_parse' | 'knowledge_analyze' | 'vision_parse' | 'storage_save' | 'document_process' | 'debug';
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskStatus = 'pending' | 'assigned' | 'completed' | 'failed';
 export type DocumentType = 'pdf' | 'web' | 'image';

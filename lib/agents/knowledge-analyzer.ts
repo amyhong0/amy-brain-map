@@ -4,10 +4,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import matter from 'gray-matter';
 
-export class KnowledgeAnalyzerAgent extends BaseAgent {
+export class TextAgent extends BaseAgent {
   constructor() {
-    super('knowledge-analyzer', '지식 분석 에이전트', '연구원', '🔬', 3);
-    this.state.position = { x: 50, y: 30 };
+    super('text_agent', '룬 마스터', 'Knowledge Analysis', '🔮', 4);
+    this.state.position = { x: 50, y: 20 };
   }
 
   async executeTask(task: Task): Promise<AgentResponse> {
@@ -128,3 +128,5 @@ export class KnowledgeAnalyzerAgent extends BaseAgent {
     return relationships;
   }
 }
+
+export { TextAgent as KnowledgeAnalyzerAgent };

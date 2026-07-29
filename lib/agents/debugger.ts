@@ -1,9 +1,9 @@
 import { BaseAgent } from './base-agent';
 import { AgentResponse, Task } from './types';
 
-export class DebuggerAgent extends BaseAgent {
+export class DebugAgent extends BaseAgent {
   constructor() {
-    super('debugger', '디버거 에이전트', '수의사', '🏥', 0);
+    super('debug', '정령사', 'Bug Hunter', '🦹', 0);
     this.state.position = { x: 50, y: 80 };
   }
 
@@ -63,7 +63,6 @@ export class DebuggerAgent extends BaseAgent {
   }
 
   private async analyzeError(error: string, code: string): Promise<any> {
-    // 에러 유형 분석
     const errorType = this.classifyError(error);
     const errorLocation = this.locateError(error, code);
     
@@ -84,7 +83,6 @@ export class DebuggerAgent extends BaseAgent {
   }
 
   private locateError(error: string, code: string): any {
-    // 간단한 에러 위치 추정
     const lines = code.split('\n');
     const errorLineMatch = error.match(/line (\d+)/);
     
@@ -114,7 +112,6 @@ export class DebuggerAgent extends BaseAgent {
   private async generateFix(errorAnalysis: any, code: string, codeType: string): Promise<string> {
     let fixedCode = code;
     
-    // 에러 유형별 수정 로직
     switch (errorAnalysis.type) {
       case 'syntax':
         fixedCode = this.fixSyntaxError(code, errorAnalysis);
@@ -126,7 +123,6 @@ export class DebuggerAgent extends BaseAgent {
         fixedCode = this.fixReferenceError(code, errorAnalysis);
         break;
       default:
-        // 일반적인 수정 시도
         fixedCode = this.applyGeneralFix(code, errorAnalysis);
     }
     
@@ -134,13 +130,8 @@ export class DebuggerAgent extends BaseAgent {
   }
 
   private fixSyntaxError(code: string, errorAnalysis: any): string {
-    // 간단한 문법 수정 시도
     let fixed = code;
-    
-    // 누락된 세미콜론 추가
     fixed = fixed.replace(/(\w)(\n)/g, '$1;\n');
-    
-    // 괄호 균형 확인
     const openBraces = (fixed.match(/{/g) || []).length;
     const closeBraces = (fixed.match(/}/g) || []).length;
     
@@ -152,7 +143,6 @@ export class DebuggerAgent extends BaseAgent {
   }
 
   private fixImportError(code: string, errorAnalysis: any): string {
-    // import 문 수정
     if (code.includes('from') && !code.includes('.js') && !code.includes('.ts')) {
       return code.replace(/from '([^']+)'/g, "from '$1.js'");
     }
@@ -160,18 +150,15 @@ export class DebuggerAgent extends BaseAgent {
   }
 
   private fixReferenceError(code: string, errorAnalysis: any): string {
-    // 참조 에러 수정 - null 체크 추가
     return code.replace(/(\w+)\.(\w+)/g, '($1?.$2)');
   }
 
   private applyGeneralFix(code: string, errorAnalysis: any): string {
-    // 일반적인 수정 시도
     return code;
   }
 
   private async testFixedCode(code: string, codeType: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // 기본 유효성 검사
       if (!code || code.trim().length === 0) {
         return { success: false, error: 'Fixed code is empty' };
       }
@@ -185,3 +172,5 @@ export class DebuggerAgent extends BaseAgent {
     }
   }
 }
+
+export { DebugAgent as DebuggerAgent };

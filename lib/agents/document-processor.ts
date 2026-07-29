@@ -3,10 +3,10 @@ import { AgentResponse, Task, Document } from './types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-export class DocumentProcessorAgent extends BaseAgent {
+export class StorageAgent extends BaseAgent {
   constructor() {
-    super('document-processor', '문서 처리 에이전트', '도서관 사서', '📚', 2);
-    this.state.position = { x: 30, y: 30 };
+    super('storage_agent', '기록가', 'Data Storage', '📚', 1);
+    this.state.position = { x: 50, y: 90 };
   }
 
   async executeTask(task: Task): Promise<AgentResponse> {
@@ -18,9 +18,9 @@ export class DocumentProcessorAgent extends BaseAgent {
       
       this.updateProgress(task.id, 30);
       
-      // MD 파일 생성
+      // 지식 마크다운 문서 생성 및 저장
       const documentId = `doc-${Date.now()}`;
-      const mdPath = path.join(process.cwd(), 'knowledge', 'documents', `${documentId}.md`);
+      const mdPath = path.join(process.cwd(), 'knowledge', `${documentId}.md`);
       
       const mdContent = this.generateMarkdown(documentId, type, title, content, url);
       
@@ -77,3 +77,5 @@ ${url ? `\n\n**Source:** ${url}` : ''}
 `;
   }
 }
+
+export { StorageAgent as DocumentProcessorAgent };

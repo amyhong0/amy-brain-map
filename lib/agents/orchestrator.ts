@@ -5,7 +5,7 @@ export class OrchestratorAgent extends BaseAgent {
   private agents: Map<string, BaseAgent> = new Map();
 
   constructor() {
-    super('orchestrator', '오케스트레이터', '중앙 통제', '🧙‍♂️', 5);
+    super('orchestrator', '대마법사', 'Central Control', '🧙‍♂️', 5);
     this.state.position = { x: 50, y: 10 };
   }
 
@@ -50,10 +50,13 @@ export class OrchestratorAgent extends BaseAgent {
 
   private assignTask(task: Task): BaseAgent | null {
     const agentMap: Record<TaskType, string> = {
-      'document_process': 'document-processor',
-      'knowledge_analyze': 'knowledge-analyzer',
-      'develop': 'developer',
-      'debug': 'debugger'
+      'orchestrate': 'orchestrator',
+      'text_parse': 'text_agent',
+      'knowledge_analyze': 'text_agent',
+      'vision_parse': 'vision_agent',
+      'storage_save': 'storage_agent',
+      'document_process': 'storage_agent',
+      'debug': 'debug'
     };
 
     const agentId = agentMap[task.type];

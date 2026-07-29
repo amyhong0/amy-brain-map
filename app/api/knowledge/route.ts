@@ -938,6 +938,40 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const doc: KnowledgeDoc = await request.json();
+    if (!doc || !doc.id || !doc.title) {
+      return NextResponse.json({ error: 'Missing required document fields' }, { status: 400 });
+    }
+
+    const kwList: string[] = (Array.isArray(doc.tags) ? doc.tags : []).map(normalizeKeyword).filter((t: string) => t && t !== 'web');
+    let kwEmbeddings: number[][] | null = null;
+    if (kwList.length > 0) {
+      try {
+        kwEmbeddings = await callNvidiaEmbeddings(kwList);
+      } catch (e) {
+        console.error('Embedding call failed, skipping:', e);
+      }
+    }
+
+    if (!doc.metadata) doc.metadata = {};
+    if (kwEmbeddings) doc.metadata.kwEmbeddings = JSON.stringify(kwEmbeddings);
+    
+    if (doc.content && (!doc.summary || doc.summary.length < 10)) {
+        doc.summary = doc.content.substring(0, 100) + '...';
+    }
+
+    await saveKnowledgeDoc(doc);
+    return NextResponse.json({ success: true, document: doc });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to update document' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

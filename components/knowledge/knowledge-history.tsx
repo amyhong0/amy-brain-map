@@ -36,32 +36,92 @@ function formatDate(isoString: string): string {
   return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }
 
-function KnowledgeModal({ doc, onClose }: { doc: KnowledgeDoc; onClose: () => void }) {
+function KnowledgeModal({ doc, onClose, onUpdate }: { doc: KnowledgeDoc; onClose: () => void; onUpdate?: (doc: KnowledgeDoc) => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(doc.title);
+  const [editTags, setEditTags] = useState(doc.tags.join(', '));
+  const [editContent, setEditContent] = useState(doc.content || doc.summary || '');
+  const [isSaving, setIsSaving] = useState(false);
+
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const updatedDoc = {
+        ...doc,
+        title: editTitle,
+        tags: editTags.split(',').map(t => t.trim()).filter(Boolean),
+        content: editContent
+      };
+      const res = await fetch('/api/knowledge', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedDoc)
+      });
+      if (res.ok) {
+        const { document } = await res.json();
+        onUpdate?.(document);
+        setIsEditing(false);
+      } else {
+        alert('Failed to update knowledge document.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error updating document.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
-        className="bg-slate-900 rounded-xl border border-purple-500/30 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+        className="bg-slate-900 rounded-xl border border-purple-500/30 max-w-2xl w-full max-h-[80vh] flex flex-col"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-        <div className="p-5">
+        <div className="p-5 flex flex-col h-full overflow-y-auto custom-scrollbar">
           <div className="flex items-start justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-white">{doc.title}</h2>
+            <div className="flex-1 mr-4">
+              {isEditing ? (
+                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} className="w-full bg-white/10 border border-purple-500/50 rounded px-2 py-1 text-xl font-bold text-white mb-2 focus:outline-none focus:border-purple-500" />
+              ) : (
+                <h2 className="text-xl font-bold text-white">{doc.title}</h2>
+              )}
               <div className="text-gray-400 text-sm mt-1">{formatDate(doc.createdAt)} • {TYPE_CONFIG[doc.type]?.label || '웹'}</div>
             </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-xl">✕</button>
+            <div className="flex gap-2 items-center flex-shrink-0">
+              {isEditing ? (
+                <>
+                  <button onClick={handleSave} disabled={isSaving} className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50">
+                    {isSaving ? '저장 중...' : '저장'}
+                  </button>
+                  <button onClick={() => setIsEditing(false)} className="text-sm bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded transition-colors">취소</button>
+                </>
+              ) : (
+                <button onClick={() => setIsEditing(true)} className="text-sm bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 px-3 py-1 rounded transition-colors">수정</button>
+              )}
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-xl ml-2">✕</button>
+            </div>
           </div>
           <div className="flex flex-wrap gap-1 mb-4">
-            {doc.tags.map(tag => (<span key={tag} className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">{tag}</span>))}
+            {isEditing ? (
+              <input type="text" value={editTags} onChange={e => setEditTags(e.target.value)} placeholder="키워드 입력 (쉼표로 구분)" className="w-full bg-white/10 border border-purple-500/50 rounded px-2 py-1 text-sm text-purple-300 focus:outline-none focus:border-purple-500" />
+            ) : (
+              doc.tags.map(tag => (<span key={tag} className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">{tag}</span>))
+            )}
           </div>
-          {doc.url && (<div className="mb-3"><a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-sm hover:underline break-all">🔗 {doc.url}</a></div>)}
-          <pre className="text-gray-300 whitespace-pre-wrap font-sans text-sm leading-relaxed bg-white/5 p-4 rounded-lg overflow-x-auto">{doc.content || doc.summary || '내용 없음'}</pre>
+          {doc.url && !isEditing && (<div className="mb-3"><a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-sm hover:underline break-all">🔗 {doc.url}</a></div>)}
+          
+          {isEditing ? (
+            <textarea value={editContent} onChange={e => setEditContent(e.target.value)} className="w-full min-h-[300px] bg-white/10 border border-purple-500/50 rounded-lg p-3 text-gray-300 font-sans text-sm leading-relaxed custom-scrollbar focus:outline-none focus:border-purple-500 resize-y" />
+          ) : (
+            <pre className="text-gray-300 whitespace-pre-wrap font-sans text-sm leading-relaxed bg-white/5 p-4 rounded-lg overflow-x-auto">{doc.content || doc.summary || '내용 없음'}</pre>
+          )}
         </div>
       </motion.div>
     </motion.div>
@@ -250,7 +310,12 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
           )}
         </div>
       </div>
-      <AnimatePresence>{selectedDoc && <KnowledgeModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />}</AnimatePresence>
+      <AnimatePresence>{selectedDoc && <KnowledgeModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} onUpdate={(updatedDoc) => {
+        const updatedDocs = knowledgeDocs.map(d => d.id === updatedDoc.id ? updatedDoc : d);
+        setKnowledgeDocs(updatedDocs);
+        setSelectedDoc(updatedDoc);
+        onChange?.(updatedDocs);
+      }} />}</AnimatePresence>
     </>
   );
 }

@@ -334,16 +334,32 @@ export default function Home() {
                         const url = urlInputRef.current?.value.trim() || '';
                         const file = fileInputRef.current?.files?.[0];
                         setIsKnowledgeAdding(true);
-                        setCurrentTask('A2A 병렬 에이전트가 지식 분석 중...');
-                        addSpellLog('cauldron', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
-                        setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
-                        await new Promise(r => setTimeout(r, 500));
-                        setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: 'A2A 텍스트 분석 (LLM)...' } : a));
-                        addSpellLog('desk', '현자', 'A2A 텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
-                        await new Promise(r => setTimeout(r, 800));
-                        setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: 'A2A 비전 분석 (Vision)...' } : a));
-                        addSpellLog('library', '서고관리자', 'A2A 비전 에이전트: 이미지/캐러셀/인포그래픽 분석 중', 'success');
-                        await new Promise(r => setTimeout(r, 600));
+                        const isImage = file ? /\.(jpg|jpeg|png)$/i.test(file.name) : false;
+                        const isPdf = file ? /\.pdf$/i.test(file.name) : false;
+                        const isUrlOnly = !file && !!url;
+                        
+                        if (isImage || isUrlOnly) {
+                          setCurrentTask('A2A 병렬 에이전트가 지식 분석 중...');
+                          addSpellLog('cauldron', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
+                          setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
+                          await new Promise(r => setTimeout(r, 500));
+                          setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: '텍스트 분석 (LLM)...' } : a));
+                          addSpellLog('desk', '현자', '텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
+                          await new Promise(r => setTimeout(r, 800));
+                          setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: isImage ? '이미지 분석 중...' : '비전 분석 (Vision)...' } : a));
+                          addSpellLog('library', '서고관리자', isImage ? '비전 에이전트: 이미지 분석 중' : '비전 에이전트: 이미지/캐러셀 분석 중', 'success');
+                          await new Promise(r => setTimeout(r, 600));
+                        } else if (isPdf) {
+                          setCurrentTask('PDF 파일 분석 중...');
+                          setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: 'PDF 파일 분석 중...' } : a));
+                          addSpellLog('desk', '현자', '텍스트 에이전트: PDF 파일 분석 중', 'success');
+                          await new Promise(r => setTimeout(r, 1400));
+                        } else {
+                          setCurrentTask('텍스트 분석 중...');
+                          setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: '텍스트 분석 중...' } : a));
+                          addSpellLog('desk', '현자', '텍스트 에이전트: 텍스트 분석 중', 'success');
+                          await new Promise(r => setTimeout(r, 1400));
+                        }
                         try {
                           let response;
                           if (file) {
@@ -358,9 +374,9 @@ export default function Home() {
                           if (response.ok) {
                             const data = await response.json();
                             setAgents(prev => prev.map(a => a.id === 'archive' ? { ...a, status: 'working', currentTask: '지식 저장 중...' } : a));
-                            addSpellLog('archive', '기록가', `A2A 병렬 파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
+                            addSpellLog('archive', '기록가', `파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
                             await new Promise(r => setTimeout(r, 400));
-                            addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다 (A2A): ${data.document?.title || file?.name || url}`, timestamp: new Date() });
+                            addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다: ${data.document?.title || file?.name || url}`, timestamp: new Date() });
                             const res = await fetch('/api/knowledge');
                             const json = await res.json();
                             const sorted = (json.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

@@ -33,7 +33,7 @@ interface SpellLog {
 // ── Zone Definitions ──────────────────────────────────────────────
 const ZONES: ZoneConfig[] = [
   {
-    id: 'cauldron',
+    id: 'orchestrator',
     name: '대마법사',
     role: 'Task Distribution',
     emoji: '🧙‍♂️',
@@ -45,7 +45,7 @@ const ZONES: ZoneConfig[] = [
     ],
   },
   {
-    id: 'desk',
+    id: 'text_agent',
     name: '룬 마스터',
     role: 'Knowledge Analysis',
     emoji: '🔮',
@@ -57,7 +57,7 @@ const ZONES: ZoneConfig[] = [
     ],
   },
   {
-    id: 'library',
+    id: 'vision_agent',
     name: '일루셔니스트',
     role: 'Knowledge Retrieval',
     emoji: '⚗️',
@@ -81,7 +81,7 @@ const ZONES: ZoneConfig[] = [
     ],
   },
   {
-    id: 'archive',
+    id: 'storage_agent',
     name: '기록가',
     role: 'Data Storage',
     emoji: '📚',
@@ -141,19 +141,19 @@ function Character({
   const getBoundaries = () => {
     let regionMinX = SAFE_MIN, regionMaxX = SAFE_MAX, regionMinY = SAFE_MIN, regionMaxY = SAFE_MAX;
     
-    if (zone.id === 'cauldron') {
+    if (zone.id === 'orchestrator') {
       regionMinX = 42; regionMaxX = 58;
       regionMinY = 10; regionMaxY = 20;
-    } else if (zone.id === 'desk') {
+    } else if (zone.id === 'text_agent') {
       regionMinX = 18; regionMaxX = 28;
       regionMinY = 32; regionMaxY = 48;
-    } else if (zone.id === 'library') {
+    } else if (zone.id === 'vision_agent') {
       regionMinX = 72; regionMaxX = 82;
       regionMinY = 32; regionMaxY = 48;
     } else if (zone.id === 'debug') {
       regionMinX = 18; regionMaxX = 28;
       regionMinY = 62; regionMaxY = 78;
-    } else if (zone.id === 'archive') {
+    } else if (zone.id === 'storage_agent') {
       regionMinX = 72; regionMaxX = 82;
       regionMinY = 62; regionMaxY = 78;
     }
@@ -468,11 +468,11 @@ function SpellLogItem({ log, zoneColor }: { log: SpellLog; zoneColor: string }) 
   // zoneId에 따른 색상 매핑
   const getZoneTextColor = (zoneId: string): string => {
     const zoneColors: Record<string, string> = {
-      cauldron: '#9C27B0',  // 보라
-      desk: '#4CAF50',      // 초록
-      library: '#2196F3',  // 파랑
+      orchestrator: '#9C27B0',  // 보라
+      text_agent: '#4CAF50',      // 초록
+      vision_agent: '#2196F3',  // 파랑
       debug: '#F44336',    // 빨강
-      archive: '#FF9800',  // 주황
+      storage_agent: '#FF9800',  // 주황
     };
     return zoneColors[zoneId] || typeColor.success;
   };
@@ -505,11 +505,11 @@ export default function WizardTower({ agents, spellLogs = [] }: WizardTowerProps
   const [isTerminalVisible, setIsTerminalVisible] = useState(true);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [characterPositions, setCharacterPositions] = useState<Record<string, { x: number; y: number }>>({
-    cauldron: { x: 50, y: 15 },
-    desk: { x: 25, y: 40 },
-    library: { x: 75, y: 40 },
+    orchestrator: { x: 50, y: 15 },
+    text_agent: { x: 25, y: 40 },
+    vision_agent: { x: 75, y: 40 },
     debug: { x: 25, y: 70 },
-    archive: { x: 75, y: 70 },
+    storage_agent: { x: 75, y: 70 },
   });
   const towerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);

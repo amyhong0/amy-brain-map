@@ -19,11 +19,11 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 const BASE_AGENTS: AgentState[] = [
-  { id: 'cauldron',  name: '대마법사',  role: 'Central Control',   emoji: '🧙‍♂️', status: 'idle', position: { x: 50, y: 10 }, floor: 5 },
-  { id: 'desk',      name: '룬 마스터',       role: 'Knowledge Analysis', emoji: '🔮',  status: 'idle', position: { x: 50, y: 20 }, floor: 4 },
-  { id: 'library',   name: '일루셔니스트',      role: 'Data Discovery',    emoji: '⚗️',  status: 'idle', position: { x: 50, y: 30 }, floor: 3 },
+  { id: 'orchestrator',  name: '대마법사',  role: 'Central Control',   emoji: '🧙‍♂️', status: 'idle', position: { x: 50, y: 10 }, floor: 5 },
+  { id: 'text_agent',      name: '룬 마스터',       role: 'Knowledge Analysis', emoji: '🔮',  status: 'idle', position: { x: 50, y: 20 }, floor: 4 },
+  { id: 'vision_agent',   name: '일루셔니스트',      role: 'Data Discovery',    emoji: '⚗️',  status: 'idle', position: { x: 50, y: 30 }, floor: 3 },
   { id: 'debug',     name: '정령사',      role: 'Bug Hunter',        emoji: '🦹',  status: 'idle', position: { x: 50, y: 80 }, floor: 0 },
-  { id: 'archive',   name: '기록가',     role: 'Data Storage',      emoji: '📚',  status: 'idle', position: { x: 50, y: 90 }, floor: 1 },
+  { id: 'storage_agent',   name: '기록가',     role: 'Data Storage',      emoji: '📚',  status: 'idle', position: { x: 50, y: 90 }, floor: 1 },
 ];
 
 interface SpellLog {
@@ -221,11 +221,11 @@ export default function Home() {
 
   const runAgentWorkflow = useCallback(async (message: string) => {
     const steps: Array<{ agentId: string; task: string; spellLog: string; delay: number }> = [
-      { agentId: 'cauldron', task: `사용자 메시지 분석: "${message.substring(0, 30)}..."`, spellLog: '에이전트 간 A2A 협력 프로토콜 시작', delay: 600 },
-      { agentId: 'desk', task: '텍스트 분석 Agent 실행 (LLM)...', spellLog: 'A2A 텍스트 분석 에이전트가 본문/키워드/topic 추출 중', delay: 1000 },
-      { agentId: 'library', task: '비전 분석 Agent 실행 (Vision)...', spellLog: 'A2A 비전 에이전트가 이미지/캐러셀/인포그래픽 분석 중', delay: 1000 },
-      { agentId: 'cauldron', task: 'A2A 병렬 결과 취합 및 응답 생성...', spellLog: '텍스트/비전 Agent 결과를 통합하여 최종 지식 생성', delay: 1200 },
-      { agentId: 'archive', task: '지식 저장 및 컨텍스트 기록...', spellLog: 'A2A 파싱 결과를 지식 보관소에 저장 완료', delay: 500 },
+      { agentId: 'orchestrator', task: `사용자 메시지 분석: "${message.substring(0, 30)}..."`, spellLog: '에이전트 간 A2A 협력 프로토콜 시작', delay: 600 },
+      { agentId: 'text_agent', task: '텍스트 분석 Agent 실행 (LLM)...', spellLog: 'A2A 텍스트 분석 에이전트가 본문/키워드/topic 추출 중', delay: 1000 },
+      { agentId: 'vision_agent', task: '비전 분석 Agent 실행 (Vision)...', spellLog: 'A2A 비전 에이전트가 이미지/캐러셀/인포그래픽 분석 중', delay: 1000 },
+      { agentId: 'orchestrator', task: 'A2A 병렬 결과 취합 및 응답 생성...', spellLog: '텍스트/비전 Agent 결과를 통합하여 최종 지식 생성', delay: 1200 },
+      { agentId: 'storage_agent', task: '지식 저장 및 컨텍스트 기록...', spellLog: 'A2A 파싱 결과를 지식 보관소에 저장 완료', delay: 500 },
     ];
     return steps;
   }, []);
@@ -271,10 +271,10 @@ export default function Home() {
         timestamp: new Date(),
         documents: matchedDocs.map((doc: any) => ({ id: doc.id, title: doc.title, content: doc.content, tags: doc.tags || [], createdAt: doc.createdAt, url: doc.url })),
       });
-      addSpellLog('cauldron', '대마법사', '최종 응답 생성 완료', 'success');
+      addSpellLog('orchestrator', '대마법사', '최종 응답 생성 완료', 'success');
       setProgress(100);
     } catch (err) {
-      addSpellLog('cauldron', '대마법사', '워크플로우 중 오류 발생', 'warning');
+      addSpellLog('orchestrator', '대마법사', '워크플로우 중 오류 발생', 'warning');
       addMessage({ id: `err-${Date.now()}`, role: 'system', content: `⚠️ 오류: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, timestamp: new Date() });
     } finally {
       setAgents(prev => prev.map(a => ({ ...a, status: 'idle', currentTask: undefined })));
@@ -340,24 +340,24 @@ export default function Home() {
                         
                         if (isImage || isUrlOnly) {
                           setCurrentTask('A2A 병렬 에이전트가 지식 분석 중...');
-                          addSpellLog('cauldron', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
-                          setAgents(prev => prev.map(a => a.id === 'cauldron' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
+                          addSpellLog('orchestrator', '대마법사', 'A2A 프로토콜로 텍스트/비전 에이전트에 작업 분배', 'success');
+                          setAgents(prev => prev.map(a => a.id === 'orchestrator' ? { ...a, status: 'working', currentTask: 'A2A 작업 분배 중...' } : a));
                           await new Promise(r => setTimeout(r, 500));
-                          setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: '텍스트 분석 (LLM)...' } : a));
-                          addSpellLog('desk', '룬 마스터', '텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
+                          setAgents(prev => prev.map(a => a.id === 'text_agent' ? { ...a, status: 'working', currentTask: '텍스트 분석 (LLM)...' } : a));
+                          addSpellLog('text_agent', '룬 마스터', '텍스트 에이전트: 본문/키워드/topic 추출 중', 'success');
                           await new Promise(r => setTimeout(r, 800));
-                          setAgents(prev => prev.map(a => a.id === 'library' ? { ...a, status: 'working', currentTask: isImage ? '이미지 분석 중...' : '비전 분석 (Vision)...' } : a));
-                          addSpellLog('library', '일루셔니스트', isImage ? '비전 에이전트: 이미지 분석 중' : '비전 에이전트: 이미지/캐러셀 분석 중', 'success');
+                          setAgents(prev => prev.map(a => a.id === 'vision_agent' ? { ...a, status: 'working', currentTask: isImage ? '이미지 분석 중...' : '비전 분석 (Vision)...' } : a));
+                          addSpellLog('vision_agent', '일루셔니스트', isImage ? '비전 에이전트: 이미지 분석 중' : '비전 에이전트: 이미지/캐러셀 분석 중', 'success');
                           await new Promise(r => setTimeout(r, 600));
                         } else if (isPdf) {
                           setCurrentTask('PDF 파일 분석 중...');
-                          setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: 'PDF 파일 분석 중...' } : a));
-                          addSpellLog('desk', '룬 마스터', '텍스트 에이전트: PDF 파일 분석 중', 'success');
+                          setAgents(prev => prev.map(a => a.id === 'text_agent' ? { ...a, status: 'working', currentTask: 'PDF 파일 분석 중...' } : a));
+                          addSpellLog('text_agent', '룬 마스터', '텍스트 에이전트: PDF 파일 분석 중', 'success');
                           await new Promise(r => setTimeout(r, 1400));
                         } else {
                           setCurrentTask('텍스트 분석 중...');
-                          setAgents(prev => prev.map(a => a.id === 'desk' ? { ...a, status: 'working', currentTask: '텍스트 분석 중...' } : a));
-                          addSpellLog('desk', '룬 마스터', '텍스트 에이전트: 텍스트 분석 중', 'success');
+                          setAgents(prev => prev.map(a => a.id === 'text_agent' ? { ...a, status: 'working', currentTask: '텍스트 분석 중...' } : a));
+                          addSpellLog('text_agent', '룬 마스터', '텍스트 에이전트: 텍스트 분석 중', 'success');
                           await new Promise(r => setTimeout(r, 1400));
                         }
                         try {
@@ -373,18 +373,18 @@ export default function Home() {
                           
                           if (response.ok) {
                             const data = await response.json();
-                            setAgents(prev => prev.map(a => a.id === 'archive' ? { ...a, status: 'working', currentTask: '지식 저장 중...' } : a));
-                            addSpellLog('archive', '기록가', `파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
+                            setAgents(prev => prev.map(a => a.id === 'storage_agent' ? { ...a, status: 'working', currentTask: '지식 저장 중...' } : a));
+                            addSpellLog('storage_agent', '기록가', `파싱 결과 저장 완료: ${data.document?.title || url}`, 'success');
                             await new Promise(r => setTimeout(r, 400));
                             addMessage({ id: `system-${Date.now()}`, role: 'system', content: `지식이 저장되었습니다: ${data.document?.title || file?.name || url}`, timestamp: new Date() });
                             const res = await fetch('/api/knowledge');
                             const json = await res.json();
                             const sorted = (json.documents || []).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                             setKnowledgeDocs(sorted as KnowledgeDoc[]);
-                            addSpellLog('cauldron', '대마법사', '지식 추가 워크플로우 완료', 'success');
+                            addSpellLog('orchestrator', '대마법사', '지식 추가 워크플로우 완료', 'success');
                           }
                         } catch (error) {
-                          addSpellLog('desk', '룬 마스터', '지식 추출 중 오류가 발생했습니다.', 'warning');
+                          addSpellLog('text_agent', '룬 마스터', '지식 추출 중 오류가 발생했습니다.', 'warning');
                           addMessage({ id: `err-${Date.now()}`, role: 'system', content: `⚠️ 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, timestamp: new Date() });
                         } finally {
                           setIsKnowledgeAdding(false);

@@ -124,6 +124,12 @@ const CHAT_KNOWLEDGE_DB: Record<string, KnowledgeContent> = {
   },
 };
 
+const EXAMPLE_QUESTIONS = [
+  { label: '📅 최근 저장 지식 요약', text: '최근 지식 보관소에 새로 추가된 문서들과 핵심 요약을 정리해줘.' },
+  { label: '🏷️ 태그별 지식 분류', text: '보관함에 있는 지식 문서들을 주요 태그와 주제별로 그룹화해서 보여줘.' },
+  { label: '🔍 AI & 기술 지식 검색', text: '저장해둔 문서와 웹 링크 중에서 AI 및 기술 관련 지식을 찾아서 설명해줘.' },
+];
+
 export default function ChatInterface({
   messages,
   onSendMessage,
@@ -266,7 +272,34 @@ export default function ChatInterface({
       </div>
 
       {/* 입력 영역 */}
-      <div className="border-t border-white/8 pt-3">
+      <div className="border-t border-white/8 pt-2">
+        {/* 예시 질문 3가지 추천 버튼 */}
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-medium text-purple-300 flex items-center gap-1 mr-1">
+            <span>💡</span> 예시 질문:
+          </span>
+          {EXAMPLE_QUESTIONS.map((q, idx) => (
+            <button
+              key={idx}
+              type="button"
+              disabled={isLoading}
+              onClick={() => {
+                if (isLoading) return;
+                addMessage({
+                  id: Date.now().toString(),
+                  role: 'user',
+                  content: q.text,
+                  timestamp: new Date(),
+                });
+                onSendMessage(q.text);
+              }}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-600/50 border border-purple-500/30 text-purple-200 hover:text-white transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-1 shadow-sm cursor-pointer"
+            >
+              {q.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex gap-2 items-end">
           <textarea
             value={input}

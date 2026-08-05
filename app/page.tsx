@@ -376,31 +376,40 @@ export default function Home() {
 
       <main className="max-w-screen-xl mx-auto px-6 py-6">
         {/* 서비스 핵심 소개 섹션 */}
-        <div className="mb-6 glass-card p-6 border border-purple-500/30 bg-gradient-to-r from-purple-950/50 via-indigo-950/40 to-slate-950/60 relative overflow-hidden rounded-2xl shadow-xl">
-          <div className="absolute left-1/2 -top-12 -translate-x-1/2 w-96 h-32 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative z-10 space-y-3 text-center flex flex-col items-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-xs font-semibold">
+        <div className="mb-6 glass-card p-6 md:p-8 border border-purple-500/30 bg-gradient-to-r from-purple-950/50 via-indigo-950/40 to-slate-950/60 relative overflow-hidden rounded-2xl shadow-xl">
+          <div className="absolute left-1/2 -top-12 -translate-x-1/2 w-96 h-36 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 space-y-4 text-center flex flex-col items-center">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-[11px] font-semibold tracking-wide">
               <span>🧠</span> Personal Knowledge System & Agent
             </div>
-            <h1 className="font-cinzel text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-200 via-pink-100 to-indigo-200 tracking-tight">
+            
+            {/* 타이틀 크기 확대 */}
+            <h1 className="font-cinzel text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-100 via-pink-100 to-indigo-200 tracking-tight drop-shadow-sm">
               Amy's Brain Office
             </h1>
-            <p className="text-sm md:text-base text-purple-100/90 leading-relaxed max-w-4xl mx-auto">
-              우리는 일상 속에서 노션, 웹페이지, 파일 등 여기저기 많은 정보들을 저장해 두지만, 
-              정작 나중에 필요할 때 다시 꺼내보지 않는 경우가 많습니다. 
-              <br className="hidden md:block" />
-              <span className="font-semibold text-purple-200">Amy's Brain Office</span>는 
-              이렇게 흩어지고 잊혀진 저장 정보들을 AI 멀티 에이전트가 손쉽게 다시 꺼내어, 
-              당신에게 필요한 도움이 되는 정보로 쉽게 찾고 활용할 수 있도록 만든 <span className="text-pink-300 font-medium">개인 지식 에이전트 서비스</span>입니다.
-            </p>
-            <div className="pt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-purple-200/80">
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20">
+
+            {/* 설명 글자 크기 축소 및 가독성 개편 */}
+            <div className="max-w-3xl mx-auto space-y-2">
+              <p className="text-xs md:text-sm font-medium text-purple-200/90 leading-relaxed">
+                "노션, 웹, 파일 등 여기저기 저장해두고 정작 필요할 때 다시 꺼내보지 않으셨나요?"
+              </p>
+              <p className="text-xs md:text-sm text-gray-300/90 leading-relaxed">
+                <strong className="text-purple-200 font-semibold">Amy's Brain Office</strong>는 
+                흩어지고 잊혀진 저장 정보들을 AI 멀티 에이전트가 손쉽게 다시 꺼내어, 
+                당신에게 꼭 필요한 정보로 쉽게 찾고 활용할 수 있도록 돕는 
+                <span className="text-pink-300 font-semibold"> 개인 지식 에이전트 서비스</span>입니다.
+              </p>
+            </div>
+
+            {/* 하단 칩스 */}
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5 text-xs text-purple-200/80">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20 text-[11px]">
                 <span>📥</span> <strong>지식 수집</strong>: URL, PDF, 이미지 통합 저장
               </span>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20 text-[11px]">
                 <span>🔄</span> <strong>지식 재발굴</strong>: 잊고 있던 저장 정보 자동 연결
               </span>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20 text-[11px]">
                 <span>💬</span> <strong>에이전트 검색</strong>: AI 채팅으로 쉽게 정보 꺼내보기
               </span>
             </div>

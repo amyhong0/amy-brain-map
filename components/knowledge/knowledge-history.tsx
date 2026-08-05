@@ -200,29 +200,49 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
     return grouped;
   }, [filteredDocs]);
 
-  const topicCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+  // 주제 키워드 통합 규칙: 영문 대소문자 구분 및 한글 띄어쓰기 구분 제거
+  const normalizeTopicKey = useCallback((topic: string): string => {
+    if (!topic) return '기타';
+    return topic.trim().toLowerCase().replace(/\s+/g, '');
+  }, []);
+
+  const topicInfoList = useMemo(() => {
+    const map = new Map<string, { key: string; displayName: string; count: number }>();
     docs.forEach(doc => {
-      const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
-      counts.set(topic, (counts.get(topic) || 0) + 1);
+      const rawTopic = ((doc as any).metadata?.topic || doc.tags?.[0] || '기타').trim();
+      const key = normalizeTopicKey(rawTopic);
+      if (!map.has(key)) {
+        map.set(key, { key, displayName: rawTopic || '기타', count: 1 });
+      } else {
+        const item = map.get(key)!;
+        item.count += 1;
+        if (rawTopic.length > item.displayName.length || (/[A-Z가-힣]/.test(rawTopic) && !/[A-Z가-힣]/.test(item.displayName))) {
+          item.displayName = rawTopic;
+        }
+      }
     });
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [docs]);
+    return [...map.values()].sort((a, b) => b.count - a.count);
+  }, [docs, normalizeTopicKey]);
 
   const byTopicGrouped = useMemo(() => {
-    const groups = new Map<string, KnowledgeDoc[]>();
-    (selectedTopic ? docs.filter(doc => {
-      const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
-      return topic === selectedTopic;
-    }) : docs).forEach(doc => {
-      const topic = (doc as any).metadata?.topic || doc.tags?.[0] || '기타';
-      if (!groups.has(topic)) groups.set(topic, []);
-      groups.get(topic)!.push(doc);
+    const groups = new Map<string, { key: string; displayName: string; items: KnowledgeDoc[] }>();
+    docs.forEach(doc => {
+      const rawTopic = ((doc as any).metadata?.topic || doc.tags?.[0] || '기타').trim();
+      const key = normalizeTopicKey(rawTopic);
+
+      if (selectedTopic && selectedTopic !== key) return;
+
+      if (!groups.has(key)) {
+        groups.set(key, { key, displayName: rawTopic || '기타', items: [] });
+      }
+      const group = groups.get(key)!;
+      group.items.push(doc);
+      if (rawTopic.length > group.displayName.length || (/[A-Z가-힣]/.test(rawTopic) && !/[A-Z가-힣]/.test(group.displayName))) {
+        group.displayName = rawTopic;
+      }
     });
-    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
-  }, [docs, selectedTopic]);
-
-
+    return [...groups.values()].sort((a, b) => b.items.length - a.items.length);
+  }, [docs, selectedTopic, normalizeTopicKey]);
 
   const handleDeleteDoc = async (docId: string) => {
     if (confirm('정말 삭제하시겠습니까?')) { await deleteKnowledgeDocAPI(docId); }
@@ -247,8 +267,6 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
           </div>
         </div>
 
-
-
         <div className="px-3 pt-1 pb-0.5">
           {activeTab === 'date' && (
             <div className="flex gap-1 mb-2">
@@ -272,14 +290,14 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
                     ? 'bg-purple-600 border-purple-500 text-white'
                     : 'border-gray-600 text-gray-400 hover:border-gray-400'
                 }`}>전체</button>
-              {topicCounts.map(([topic, count]) => (
-                <button key={topic} onClick={() => setSelectedTopic(selectedTopic === topic ? null : topic)}
+              {topicInfoList.map(({ key, displayName, count }) => (
+                <button key={key} onClick={() => setSelectedTopic(selectedTopic === key ? null : key)}
                   className={`px-2.5 py-0.5 rounded-full text-[10px] transition-all border ${
-                    selectedTopic === topic
+                    selectedTopic === key
                       ? 'bg-purple-600 border-purple-500 text-white'
                       : 'border-gray-600 text-gray-400 hover:border-gray-400'
                   }`}>
-                  {topic} <span className="opacity-60">{count}</span>
+                  {displayName} <span className="opacity-60">{count}</span>
                 </button>
               ))}
             </div>
@@ -303,10 +321,10 @@ export default function KnowledgeHistory({ documents, onChange }: KnowledgeHisto
 
           {activeTab === 'topic' && (
             <div className="space-y-3">
-              {byTopicGrouped.map(([topic, items]) => (
-                <div key={topic}>
+              {byTopicGrouped.map(({ key, displayName, items }) => (
+                <div key={key}>
                   <div className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                    <div className="h-px bg-gray-700 flex-1" /><span>{topic} ({items.length})</span><div className="h-px bg-gray-700 flex-1" />
+                    <div className="h-px bg-gray-700 flex-1" /><span>{displayName} ({items.length})</span><div className="h-px bg-gray-700 flex-1" />
                   </div>
                   {items.map(doc => (
                     <DocItem key={doc.id} doc={doc} onSelect={() => setSelectedDoc(doc)} onDelete={() => handleDeleteDoc(doc.id)} />

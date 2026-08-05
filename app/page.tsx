@@ -377,15 +377,15 @@ export default function Home() {
       <main className="max-w-screen-xl mx-auto px-6 py-6">
         {/* 서비스 핵심 소개 섹션 */}
         <div className="mb-6 glass-card p-6 border border-purple-500/30 bg-gradient-to-r from-purple-950/50 via-indigo-950/40 to-slate-950/60 relative overflow-hidden rounded-2xl shadow-xl">
-          <div className="absolute -right-12 -bottom-12 w-56 h-56 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative z-10 space-y-3">
+          <div className="absolute left-1/2 -top-12 -translate-x-1/2 w-96 h-32 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 space-y-3 text-center flex flex-col items-center">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-xs font-semibold">
               <span>🧠</span> Personal Knowledge System & Agent
             </div>
             <h1 className="font-cinzel text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-200 via-pink-100 to-indigo-200 tracking-tight">
               Amy's Brain Office
             </h1>
-            <p className="text-sm md:text-base text-purple-100/90 leading-relaxed max-w-4xl">
+            <p className="text-sm md:text-base text-purple-100/90 leading-relaxed max-w-4xl mx-auto">
               우리는 일상 속에서 노션, 웹페이지, 파일 등 여기저기 많은 정보들을 저장해 두지만, 
               정작 나중에 필요할 때 다시 꺼내보지 않는 경우가 많습니다. 
               <br className="hidden md:block" />
@@ -393,7 +393,7 @@ export default function Home() {
               이렇게 흩어지고 잊혀진 저장 정보들을 AI 멀티 에이전트가 손쉽게 다시 꺼내어, 
               당신에게 필요한 도움이 되는 정보로 쉽게 찾고 활용할 수 있도록 만든 <span className="text-pink-300 font-medium">개인 지식 에이전트 서비스</span>입니다.
             </p>
-            <div className="pt-2 flex flex-wrap items-center gap-3 text-xs text-purple-200/80">
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-purple-200/80">
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20">
                 <span>📥</span> <strong>지식 수집</strong>: URL, PDF, 이미지 통합 저장
               </span>

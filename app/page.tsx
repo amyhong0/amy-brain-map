@@ -401,17 +401,80 @@ export default function Home() {
               </p>
             </div>
 
-            {/* 하단 칩스 */}
-            <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5 text-xs text-purple-200/80">
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20 text-[11px]">
-                <span>📥</span> <strong>지식 수집</strong>: URL, PDF, 이미지 통합 저장
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20 text-[11px]">
-                <span>🔄</span> <strong>지식 재발굴</strong>: 잊고 있던 저장 정보 자동 연결
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-purple-500/20 text-[11px]">
-                <span>💬</span> <strong>에이전트 검색</strong>: AI 채팅으로 쉽게 정보 꺼내보기
-              </span>
+            {/* 핵심 기능 강조 3대 카드 섹션 */}
+            <div className="pt-4 w-full max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+              {/* 기능 1 */}
+              <div className="p-4 rounded-xl bg-white/5 border border-purple-500/30 hover:border-purple-400/60 hover:bg-purple-900/20 transition-all duration-300 transform hover:-translate-y-1 shadow-lg group flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-3 mb-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                      📥
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white group-hover:text-purple-200 transition-colors">
+                        통합 지식 수집
+                      </h3>
+                      <span className="text-[10px] text-purple-300/80">Knowledge Ingestion</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    웹 URL, PDF, 이미지, 텍스트 문서 등 흩어진 자료를 한곳에 간편 수집
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-white/5 flex gap-1.5 text-[10px] text-purple-300/70 font-mono">
+                  <span>#URL</span>
+                  <span>#PDF</span>
+                  <span>#이미지</span>
+                </div>
+              </div>
+
+              {/* 기능 2 */}
+              <div className="p-4 rounded-xl bg-white/5 border border-pink-500/30 hover:border-pink-400/60 hover:bg-pink-900/20 transition-all duration-300 transform hover:-translate-y-1 shadow-lg group flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-3 mb-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-400/30 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                      🔄
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white group-hover:text-pink-200 transition-colors">
+                        AI 지식 재발굴
+                      </h3>
+                      <span className="text-[10px] text-pink-300/80">Smart Discovery</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    방치된 저장 자료를 AI 멀티 에이전트가 자동 파싱하고 관계망으로 연결
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-white/5 flex gap-1.5 text-[10px] text-pink-300/70 font-mono">
+                  <span>#자동연결</span>
+                  <span>#지식그래프</span>
+                </div>
+              </div>
+
+              {/* 기능 3 */}
+              <div className="p-4 rounded-xl bg-white/5 border border-indigo-500/30 hover:border-indigo-400/60 hover:bg-indigo-900/20 transition-all duration-300 transform hover:-translate-y-1 shadow-lg group flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-3 mb-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                      💬
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white group-hover:text-indigo-200 transition-colors">
+                        대화형 인출 & 활용
+                      </h3>
+                      <span className="text-[10px] text-indigo-300/80">Instant Retrieval</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    자연어 채팅과 예시 질문 버튼으로 나에게 필요한 알짜 정보만 즉시 검색
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-white/5 flex gap-1.5 text-[10px] text-indigo-300/70 font-mono">
+                  <span>#AI채팅</span>
+                  <span>#스마트검색</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

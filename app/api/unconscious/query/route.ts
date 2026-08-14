@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireHistoryToken } from '@/lib/unconscious-auth';
+import { requireUser } from '@/lib/unconscious-auth';
 import { runUnconsciousQuery } from '@/lib/unconscious-agents';
 import { loadUnconsciousStore } from '@/lib/utils/unconscious-storage';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
-  const authError = requireHistoryToken(request);
-  if (authError) return authError;
+  const auth = await requireUser(request);
+  if ('response' in auth) return auth.response;
 
   try {
     const body = await request.json() as { message?: unknown; webSearch?: unknown };
@@ -16,8 +16,7 @@ export async function POST(request: NextRequest) {
     if (message.length < 2 || message.length > 1_000) {
       return NextResponse.json({ error: '질문은 2자 이상 1,000자 이하여야 합니다.' }, { status: 400 });
     }
-
-    const store = await loadUnconsciousStore();
+    const store = await loadUnconsciousStore(auth.user.id);
     const result = await runUnconsciousQuery(message, store.visits, store.candidates, webSearchEnabled);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

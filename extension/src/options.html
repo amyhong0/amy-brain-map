@@ -18,16 +18,16 @@
 <body>
   <main>
     <h1>Amy Brain Map 연결</h1>
-    <p>방문 기록은 당신이 지정한 개인 앱에만 동기화됩니다. 초기 수집 전까지는 아무 기록도 전송하지 않습니다.</p>
+    <p>대시보드에서 발급한 10분짜리 연결 코드로 이 Chrome 프로필을 연결합니다. 운영자 비밀값이나 다른 사용자의 정보는 입력하지 않습니다.</p>
     <section class="card">
-      <h2>개인 기록 금고</h2>
+      <h2>Chrome 기록 연결</h2>
       <label>앱 주소<input id="endpoint" type="url" placeholder="예: https://amy-brain-map.vercel.app" /></label>
-      <label>개인 보호 키<input id="token" type="password" placeholder="BROWSER_HISTORY_INGEST_TOKEN 값" /></label>
+      <label>연결 코드<input id="connectCode" type="text" inputmode="text" autocomplete="off" placeholder="예: ABM-7KQ2-N8WM-P4RX" /></label>
       <label class="check"><input id="enabled" type="checkbox" />방문 메타데이터 동기화 사용</label>
-      <button id="save">연결 저장</button>
+      <button id="save">연결하고 동기화 사용</button>
       <div id="status" role="status"></div>
     </section>
-    <p class="notice">수집하는 정보는 URL·제목·방문 시각·방문 횟수입니다. 시크릿 모드 방문은 Chrome 방문 기록에 포함되지 않으며 이 확장 프로그램도 수집하지 않습니다. 페이지 본문은 이 확장 프로그램이 읽거나 전송하지 않습니다.</p>
+    <p class="notice">수집하는 정보는 URL·제목·방문 시각·방문 횟수입니다. 시크릿 모드 방문은 Chrome 방문 기록에 포함되지 않으며 이 확장 프로그램도 수집하지 않습니다. 페이지 본문은 이 확장 프로그램이 읽거나 전송하지 않습니다. 연결 코드는 한 번만 사용되며 10분 뒤 만료됩니다.</p>
   </main>
   <script src="options.js"></script>
 </body>

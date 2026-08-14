@@ -1,4 +1,4 @@
-# Amy's Brain Office — 변경 내역
+# Amy Brain Map — 변경 내역
 
 > 마지막 업데이트: 2026-07-24
 

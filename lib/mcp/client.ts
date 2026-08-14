@@ -26,7 +26,7 @@ export class MCPClient {
 
       const client = new Client(
         {
-          name: 'amys-brain-office',
+          name: 'amy-brain-map',
           version: '1.0.0'
         },
         {

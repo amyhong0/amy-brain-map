@@ -1,6 +1,6 @@
 # UI Redesign Design Spec
 **Date**: 2026-07-21
-**Project**: Amy's Brain Office
+**Project**: Amy Brain Map
 **Scope**: Wizard Space & Knowledge Graph UI Redesign
 
 ## Overview

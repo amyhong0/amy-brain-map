@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Amy's Brain Office — Unconscious Map",
+  "name": "Amy Brain Map — Unconscious Map",
   "version": "0.1.0",
-  "description": "개인 방문 메타데이터를 Amy's Brain Office에 안전하게 동기화해 무의식 지식 지도를 만듭니다.",
+  "description": "개인 방문 메타데이터를 Amy Brain Map에 안전하게 동기화해 나만의 사고 지도를 만듭니다.",
   "permissions": ["history", "storage", "alarms"],
   "host_permissions": ["http://localhost/*", "https://*.vercel.app/*"],
   "optional_host_permissions": ["https://*/*"],
@@ -11,7 +11,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Amy's Brain Office 동기화",
+    "default_title": "Amy Brain Map 동기화",
     "default_popup": "src/popup.html"
   },
   "options_page": "src/options.html"

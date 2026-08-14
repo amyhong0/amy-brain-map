@@ -1,97 +1,46 @@
-# Amy Brain Map — Personal Cognitive Atlas
+# Amy Brain Map
 
-Amy Brain Map은 **무심코 지나친 웹 탐색의 흔적을 반복 관심·시간적 흐름·잠재적 연결로 해석해, 개인의 사고 지도를 만드는 서비스**입니다. 수동 URL·파일 등록과 문서 유사도 그래프를 제거하고 Chrome 방문 기록 메타데이터와 다중 에이전트 협업을 중심으로 설계했습니다.
+> **매일의 탐색에 쌓인 관심의 패턴을 분석해, 나만의 무의식 지도를 만드는 개인 지식 그래프 서비스**
 
-## 다중 사용자 아키텍처
+Amy Brain Map은 Chrome 방문 기록에 남은 탐색 신호를 읽고, 반복적으로 관심을 둔 주제와 시간에 따른 탐색 흐름을 **대화 가능한 지식 그래프**로 바꾸는 서비스입니다. 사용자는 단순히 “내가 어제 본 AI 콘텐츠 제작 자료가 뭐였지?”라고 물어볼 수 있고, 서비스는 개인 기록을 근거로 답변하며 관련 관심 축과 연결을 지도 위에 강조합니다.
 
-| 구성 요소 | 사용 서비스 | 역할 |
-|---|---|---|
-| 웹 앱·서버 API | Vercel | Next.js 배포, Google OAuth 콜백, 인증된 API 실행 |
-| 사용자별 실시간 데이터 | 관리형 PostgreSQL | 사용자, 세션, Chrome 확장 설치, 방문 메타데이터, 지도 후보, 개인정보 정책 |
-| 백업·내보내기 | Google Cloud Storage | 사용자별 암호화 원본 백업, 사용자가 요청한 내보내기, 장기 분석 산출물 |
-| 사용자 인증 | Google OAuth / OpenID Connect | Google `sub` 기반 영구 사용자 식별과 서버 세션 쿠키 |
+이 프로젝트는 **개인 데이터의 의미 있는 재해석**과 **다중 사용자 서비스 운영에 필요한 보안·저장소 설계**를 함께 다룬 풀스택 프로젝트입니다.
 
-Vercel은 **배포와 서버 API 실행만** 담당합니다. 방문 기록과 그래프는 PostgreSQL에 행 단위로 저장되고, GCS에는 AES-256-GCM으로 한 번 더 암호화한 압축 백업·내보내기 파일만 저장됩니다.
+## 프로젝트 한눈에 보기
 
-## 개인정보 보호 원칙
-
-| 항목 | 처리 방식 |
+| 구분 | 내용 |
 |---|---|
-| 수집 범위 | URL, 제목, 방문 시각, 방문 횟수만 수집합니다. |
-| 미수집 범위 | 페이지 본문, 시크릿 모드 방문, Chrome 동기화 계정 비밀번호는 수집하지 않습니다. |
-| 사용자 격리 | 모든 방문·후보·정책·분석 실행은 Google 사용자 ID로 분리합니다. |
-| 확장 프로그램 권한 | 서버 공용 비밀값을 사용하지 않습니다. 로그인 사용자가 발급한 10분짜리 단회 연결 코드를 설치 전용 토큰으로 교환합니다. |
-| 백업·내보내기 | GCS 비공개 버킷에 저장하고, 앱 수준 AES-256-GCM 암호화와 GCS 기본 서버 측 암호화를 함께 적용합니다. |
+| **문제** | 일상적인 웹 탐색은 빠르게 사라지지만, 그 안에는 반복 관심과 학습 방향을 보여 주는 신호가 축적됩니다. |
+| **해결 방식** | Chrome 방문 기록의 URL·제목·시각·횟수를 분석해 관심 축과 관계 가설을 만들고, 그래프와 대화형 질의로 다시 탐색합니다. |
+| **핵심 가치** | 기억에 의존하지 않고도 자신의 탐색 패턴을 발견하고, 개인의 관심사·학습 흐름·맥락을 다시 찾아볼 수 있습니다. |
+| **개인정보 원칙** | 페이지 본문은 수집하지 않으며, 방문 메타데이터만 사용자 계정별로 분리해 저장합니다. |
 
-## 핵심 경험
+## 사용자 경험
 
-단일 화면에서 질문을 입력하면 질문 해석자, 기억 탐색자, 시간 해석자, 관계 검증자, 지도 항해자, 응답 구성자가 협업합니다. 예를 들어 “내가 어제 본 것 중에 AI 콘텐츠 제작 관련된 게 뭐더라?”라고 물으면 시간 조건과 키워드를 해석하고, 관련 방문 흔적을 찾은 뒤, 교차 검증된 관심 축과 연결 가설만 지도에서 강조합니다.
+사용자는 Google 계정으로 로그인한 뒤, 대시보드에서 발급한 일회용 연결 코드로 자신의 Chrome 프로필을 연결합니다. 확장 프로그램은 방문 기록을 초기 일괄 수집 후 증분 동기화하며, 대시보드는 동기화 진행률과 분석 결과를 한 화면에서 제공합니다.
 
-| 기능 | 동작 |
-|---|---|
-| **Chrome 방문 기록 동기화** | 과거 기록을 한 번 읽은 뒤 새 방문을 증분 동기화합니다. 초기 수집은 최대 100,000건을 500건 단위로 순차 처리합니다. |
-| **무의식 체계 지도** | 반복 관심은 노드 크기, 탐색 흐름의 연결은 선, 질문 결과는 강조색으로 표시합니다. |
-| **발견 인박스** | 반복 관심과 시간적 인접성을 바탕으로 생성한 관계 가설을 승인·제외할 수 있습니다. |
-| **에이전트 간 교차 검증** | 탐색 에이전트의 방문 근거 ID를 관계 검증 에이전트가 다시 확인한 뒤 지도 에이전트에 전달합니다. |
-| **선택적 웹 검색** | 사용자가 웹 검색 토글을 켜고 개인 기록에 직접 근거가 없을 때만 공개 웹을 검색합니다. 질문 문장만 검색하며 방문 이력은 외부 검색에 전송하지 않습니다. |
-| **내 기록 내보내기** | 사용자가 요청하면 계정 범위의 암호화 내보내기를 GCS에 생성하고 세션으로 검증된 다운로드 경로만 제공합니다. |
-
-## 운영자 준비 절차
-
-배포 전에 **[운영자 설정 가이드](docs/operator-setup-guide.md)**를 완료하십시오. 이 가이드는 Neon PostgreSQL, GCS 비공개 버킷·서비스 계정, Google OAuth 웹 클라이언트, Vercel Production 환경 변수 설정을 단계별로 설명합니다.
-
-> 서비스 사용자는 PostgreSQL·GCS·Vercel 비밀값을 알거나 입력할 필요가 없습니다. 사용자는 Google 로그인과 Chrome 확장 프로그램 연결 코드만 사용합니다.
-
-### 1. 환경 변수 설정
-
-`.env.example`을 참고하여 개발 환경이나 Vercel Production Environment에 환경 변수를 설정합니다.
-
-| 변수 | 필수 | 역할 |
-|---|---:|---|
-| `DATABASE_URL` | 예 | 관리형 PostgreSQL의 pooled 연결 문자열 |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 예 | Google OAuth 웹 클라이언트 자격 증명 |
-| `NEXT_PUBLIC_APP_URL` | 예 | 실제 배포 URL. OAuth 콜백 URI 기준이 됩니다. |
-| `AUTH_SESSION_SECRET` | 예 | 32자 이상 고유한 세션 상태·쿠키 보호 비밀값 |
-| `GCS_BUCKET_NAME` | 예 | 비공개 GCS 버킷 이름 |
-| `GCS_SERVICE_ACCOUNT_JSON` | 예 | 버킷 최소 권한 서비스 계정 JSON 키 전체 내용 |
-| `HISTORY_BACKUP_ENCRYPTION_KEY` | 예 | GCS 백업·내보내기용 AES-256-GCM 키 |
-| `NVIDIA_API_KEY` | 예 | AI 대화 응답 구성 |
-| `TAVILY_API_KEY` | 선택 | 웹 검색 토글을 사용할 때만 필요 |
-
-이전 단일 사용자 구조의 `BROWSER_HISTORY_INGEST_TOKEN`, `BROWSER_HISTORY_ENCRYPTION_KEY`, `BLOB_READ_WRITE_TOKEN`은 더 이상 사용하지 않습니다.
-
-### 2. PostgreSQL 스키마 적용
-
-`DATABASE_URL`을 설정한 뒤 한 번 실행합니다.
-
-```bash
-npm ci
-npm run db:migrate
+```mermaid
+flowchart LR
+  A[Google 로그인] --> B[일회용 연결 코드 발급]
+  B --> C[Chrome 확장 프로그램 연결]
+  C --> D[방문 메타데이터 동기화]
+  D --> E[관심 패턴·관계 분석]
+  E --> F[개인 지식 그래프]
+  F --> G[대화형 기억 탐색]
 ```
 
-### 3. 앱 실행
+| 경험 | 구현 방식 |
+|---|---|
+| **기록 연결** | Chrome 확장 프로그램이 최대 100,000건의 초기 방문 기록을 500건씩 순차 동기화하고, 진행률을 화면에 표시합니다. |
+| **무의식 지도** | 반복적으로 방문한 주제는 관심 축으로 시각화하고, 시간·도메인·탐색 패턴에 근거한 관계 가설을 연결선으로 보여 줍니다. |
+| **기억 탐색** | 자연어 질문을 시간 조건과 주제로 해석해, 근거 방문 기록과 관계 가설을 함께 찾습니다. |
+| **발견 검토** | 사용자는 생성된 관계 가설을 승인하거나 제외해 자신의 지도를 직접 다듬을 수 있습니다. |
+| **웹 검색 보강** | 사용자가 명시적으로 켠 경우에만 개인 기록에 없는 정보를 공개 웹 검색으로 보강하며, 방문 이력은 검색 서비스로 전송하지 않습니다. |
+| **데이터 주권** | 사용자는 자신의 기록을 암호화된 내보내기 파일로 받을 수 있습니다. |
 
-```bash
-npm run dev
-```
+## 멀티 에이전트 기억 탐색
 
-개발 서버는 기본적으로 `http://localhost:3000`에서 실행됩니다. 개발용 OAuth 클라이언트에는 `http://localhost:3000/api/auth/callback`을 Redirect URI로 추가해야 합니다.
-
-## Chrome 확장 프로그램 설치와 연결
-
-1. Chrome에서 `chrome://extensions`를 엽니다.
-2. **개발자 모드**를 켭니다.
-3. **압축해제된 확장 프로그램을 로드합니다**를 선택하고 이 저장소의 `extension/` 폴더를 고릅니다.
-4. Amy Brain Map 웹 화면에서 Google로 로그인합니다.
-5. 아직 기록이 없으면 표시되는 **연결 코드 발급**을 누릅니다.
-6. 확장 프로그램의 **연결 설정**에서 앱 주소와 `ABM-...` 형식 연결 코드를 입력하고 동기화를 켭니다.
-7. 코드가 확인되면 웹 화면으로 돌아와 **Chrome 기록 가져오기**를 누릅니다.
-
-연결 코드는 단회·10분 유효이며, 확인 뒤 확장 프로그램은 해당 Chrome 프로필에만 연결된 설치 전용 토큰을 저장합니다. 다른 사용자와 코드를 공유하거나 운영자 비밀값을 확장 프로그램에 넣을 필요가 없습니다.
-
-확장 프로그램은 Manifest V3 및 `history`, `storage`, `alarms`, `scripting` 권한을 사용합니다. `history` 권한은 Chrome 방문 기록 API에, `scripting` 권한은 사용자가 웹 화면에서 누른 전체 기록 동기화 요청을 확장 프로그램에 전달하는 데 필요합니다.[^chrome-history]
-
-## 에이전트 협업 흐름
+질문에 대한 응답은 하나의 모델 호출이 아니라, 역할이 분리된 에이전트가 근거를 교차 검증하는 파이프라인을 거칩니다. 이 구조는 답변을 자연스럽게 만드는 것뿐 아니라, 개인 기록에 없는 내용을 마치 기록에서 찾은 것처럼 제시하지 않도록 설계한 장치입니다.
 
 ```mermaid
 flowchart LR
@@ -100,32 +49,126 @@ flowchart LR
   I --> T[시간 해석자]
   R --> V[관계 검증자]
   T --> V
-  V --> M[지도 항해자]
-  M --> A[응답 구성자]
-  R -. 개인 기록에 근거 없음 + 웹 검색 ON .-> W[웹 정찰자]
+  V --> N[지도 항해자]
+  N --> A[응답 구성자]
+  R -. 개인 기록 근거 부족 + 웹 검색 ON .-> W[웹 정찰자]
   W --> A
-  A --> UI[답변·근거·실시간 지도 강조]
+  A --> O[답변·근거·지도 강조]
 ```
 
-웹 정찰자는 사용자가 대화창에서 웹 검색 토글을 켠 경우에만, 그리고 개인 방문 기록에서 관련 근거를 찾지 못한 경우에만 호출됩니다. 웹 검색 결과는 개인 기록과 분리해 **웹 검색** 표시 및 출처 링크로 보여 줍니다.
-
-## API 개요
-
-| 경로 | 인증·역할 |
+| 에이전트 | 역할 |
 |---|---|
-| `GET /api/auth` | 현재 Google 로그인 세션 조회 |
-| `GET /api/auth/login` / `GET /api/auth/callback` | OAuth 로그인 시작·콜백 |
-| `POST /api/auth` | 로그아웃 |
-| `POST /api/unconscious/extension/connect-code` | 로그인 사용자가 단회 연결 코드 발급 |
-| `POST /api/unconscious/extension/connect` | 확장 프로그램이 코드를 설치 전용 토큰으로 교환 |
-| `POST /api/unconscious/visits` | 설치 전용 토큰으로 방문 메타데이터 배치 동기화 |
-| `GET /api/unconscious/visits` | 로그인 사용자의 최근 방문 메타데이터 조회 |
-| `GET/PATCH /api/unconscious/settings` | 로그인 사용자의 보존 기간·도메인 차단 정책 제어 |
-| `POST/GET /api/unconscious/analyze` | 사용자별 발견 후보 생성·조회 |
-| `PATCH /api/unconscious/candidates/:id` | 사용자 자신의 후보 승인·제외 |
-| `POST /api/unconscious/query` | 사용자별 다중 에이전트 질의와 지도 강조 |
-| `POST /api/unconscious/archives` | GCS에 암호화 백업·내보내기 생성 |
-| `GET /api/unconscious/archives/:id` | 소유자 세션으로 내보내기 다운로드 |
+| **질문 해석자** | 질문에서 주제, 시간 범위, 탐색 의도를 추출합니다. |
+| **기억 탐색자** | 사용자 자신의 방문 기록에서 관련 URL·제목·도메인 신호를 찾습니다. |
+| **시간 해석자** | “어제”, “최근 일주일”과 같은 시간 표현을 실제 조회 범위로 변환합니다. |
+| **관계 검증자** | 후보 연결이 실제 방문 근거와 일치하는지 재검증합니다. |
+| **지도 항해자** | 질문과 가장 관련 있는 노드·관계를 선택해 그래프 강조 상태를 만듭니다. |
+| **응답 구성자** | 개인 기록 근거와 선택적 웹 검색 결과를 분리해 답변을 구성합니다. |
+
+## 아키텍처
+
+서비스는 **Vercel을 배포와 서버 API 실행 계층으로만** 사용합니다. 사용자별 실시간 데이터는 PostgreSQL에, 백업과 내보내기는 비공개 Google Cloud Storage에 저장해 쓰기·조회·백업의 성격을 분리했습니다.
+
+```mermaid
+flowchart TB
+  U[사용자] --> W[Next.js 웹 대시보드]
+  U --> X[Chrome 확장 프로그램]
+  W --> O[Google OAuth]
+  W --> A[인증 API]
+  X --> A
+  A --> P[(PostgreSQL)]
+  A --> G[(Google Cloud Storage)]
+  A --> N[NVIDIA AI API]
+  A -. 선택적 웹 검색 .-> T[Tavily API]
+  V[Vercel] --> W
+  V --> A
+```
+
+| 계층 | 기술 | 설계 의도 |
+|---|---|---|
+| **프론트엔드·API** | Next.js 16, App Router, TypeScript, Tailwind CSS | 단일 대시보드 경험과 서버 API를 같은 코드베이스에서 구현합니다. |
+| **인증** | Google OAuth 2.0 / OpenID Connect, 서명 세션 쿠키 | Google `sub`를 사용자 영구 식별자로 사용하고, 웹 API 요청을 사용자 범위로 제한합니다. |
+| **실시간 데이터** | PostgreSQL, Neon Serverless Driver | 방문 기록·도메인 정책·분석 실행·그래프 후보를 행 단위로 저장하고 계정별로 격리합니다. |
+| **백업·내보내기** | Google Cloud Storage | AES-256-GCM 암호화와 gzip 압축을 적용한 사용자별 백업·내보내기 객체를 비공개 버킷에 보관합니다. |
+| **Chrome 연동** | Manifest V3, History API, Alarms API | 방문 신호 수집과 증분 동기화를 브라우저 측에서 수행합니다.[^chrome-history] |
+| **AI·검색** | NVIDIA API, Tavily API | 개인 기록 기반 답변을 우선하고, 사용자 동의가 있을 때만 공개 웹을 보강합니다. |
+
+## 보안 및 개인정보 설계
+
+개인 브라우징 기록을 다루는 만큼, 기능보다 먼저 **수집 범위·권한·격리 경계**를 설계했습니다.
+
+| 보호 항목 | 적용 방식 |
+|---|---|
+| **최소 수집** | URL, 제목, 마지막 방문 시각, 방문 횟수만 수집합니다. 페이지 본문과 시크릿 모드 방문은 수집하지 않습니다. |
+| **사용자 격리** | 사용자, 방문 기록, 그래프 후보, 개인정보 정책, 분석 실행은 모두 Google 사용자 ID를 기준으로 분리합니다. |
+| **확장 프로그램 권한** | 서비스 공용 비밀값 대신 10분 유효·단회 사용 연결 코드로 설치 전용 토큰을 발급합니다. |
+| **API 접근 제어** | 웹 요청은 세션 쿠키로, 확장 프로그램 동기화 요청은 설치 전용 토큰으로 각각 검증합니다. |
+| **저장 데이터 보호** | GCS 백업·내보내기는 앱 수준 AES-256-GCM 암호화와 GCS의 기본 서버 측 암호화를 함께 사용합니다. |
+| **사용자 통제** | 도메인 차단 정책과 사용자 요청 기반의 데이터 내보내기 기능을 제공합니다. |
+
+## 구현에서 집중한 지점
+
+### 1. 데이터의 의미를 만드는 분석 흐름
+
+방문 기록을 단순 목록으로 보여 주는 대신, 반복 방문·도메인·시간 인접성·제목 키워드를 결합해 그래프 후보를 생성합니다. 생성된 후보는 자동 반영과 사용자 검토 상태를 구분해, AI의 추론을 확정된 사실처럼 다루지 않도록 했습니다.
+
+### 2. 서버리스 환경에 맞춘 다중 사용자 저장소
+
+Vercel 서버리스 실행 환경에서 동시성·조회 성능·사용자 격리를 고려해 PostgreSQL을 실시간 데이터베이스로 선택했습니다. 연결 문자열은 서버 환경 변수로만 관리하고, 마이그레이션으로 사용자·세션·설치 권한·방문 기록·정책·분석 실행 테이블을 명시적으로 관리합니다.
+
+### 3. 확장 프로그램과 웹 서비스 간의 안전한 연결
+
+Chrome 확장 프로그램은 장기간 재사용 가능한 서버 공용 키를 보관하지 않습니다. 사용자가 로그인 후 발급하는 짧은 유효기간의 연결 코드를 단 한 번만 교환해 설치 토큰을 만들며, 이후 동기화는 해당 설치와 사용자 범위 안에서만 처리됩니다.
+
+### 4. 개인 기록과 공개 웹 정보의 경계
+
+웹 검색 토글을 켜도 개인 방문 이력은 외부 검색 서비스에 보내지 않습니다. 개인 기록에서 근거가 확인되는 경우 해당 기록을 우선하고, 부족한 경우에만 질문 문장을 사용해 공개 웹 검색을 수행하며 결과를 별도로 표시합니다.
+
+## 기술 스택
+
+| 영역 | 기술 |
+|---|---|
+| Language | TypeScript, JavaScript, SQL |
+| Web | Next.js 16, React, App Router, Tailwind CSS |
+| Data | PostgreSQL, Neon Serverless Driver, Google Cloud Storage |
+| Authentication | Google OAuth 2.0, OpenID Connect, HTTP-only session cookie |
+| Browser Extension | Chrome Extension Manifest V3, History API, Storage API, Alarms API |
+| AI | NVIDIA API, Tavily API |
+| Testing | Jest, ts-jest, Next.js production build |
+| Deployment | Vercel |
+
+## 로컬 실행
+
+외부 서비스 설정이 필요한 프로젝트입니다. 운영 환경 설정은 [운영자 설정 가이드](docs/operator-setup-guide.md)를 참고합니다.
+
+```bash
+npm ci
+cp .env.example .env.local
+npm run db:migrate
+npm run dev
+```
+
+개발 환경에서는 Google OAuth 클라이언트의 Redirect URI에 다음 주소를 등록합니다.
+
+```text
+http://localhost:3000/api/auth/callback
+```
+
+Chrome 확장 프로그램은 `chrome://extensions`에서 **개발자 모드**를 켠 뒤, `extension/` 디렉터리를 압축 해제하여 로드할 수 있습니다. 웹 대시보드에서 로그인하고 연결 코드를 발급한 뒤, 확장 프로그램의 연결 설정에 앱 주소와 코드를 입력하면 됩니다.
+
+## 프로젝트 구조
+
+```text
+app/                         # Next.js 페이지와 인증·도메인 API
+components/unconscious/      # 지식 그래프 시각화 컴포넌트
+extension/                   # Manifest V3 Chrome 확장 프로그램
+db/migrations/               # PostgreSQL 스키마 마이그레이션
+lib/unconscious-agents.ts    # 역할 기반 다중 에이전트 파이프라인
+lib/unconscious-auth.ts      # OAuth 세션·확장 설치 권한 검증
+lib/utils/unconscious-storage.ts
+                             # 사용자별 PostgreSQL 저장소 계층
+lib/gcs-archive.ts           # 암호화 GCS 백업·내보내기
+```
 
 ## 검증
 
@@ -134,8 +177,11 @@ npm test
 npm run build
 ```
 
-프로덕션 빌드는 TypeScript 검사와 Next.js 최적화 빌드를 함께 수행합니다.
+현재 검증 범위는 지식 그래프 분석·암호화 키 처리 단위 테스트와 Next.js TypeScript 프로덕션 빌드입니다.
 
-## 참고
+## 운영 문서
 
-[^chrome-history]: [Chrome for Developers — chrome.history API](https://developer.chrome.com/docs/extensions/reference/api/history)
+- [운영자 설정 가이드](docs/operator-setup-guide.md)
+- [다중 사용자 아키텍처 검토 메모](docs/multi-user-feasibility-notes.md)
+
+[^chrome-history]: [Chrome for Developers — `chrome.history` API](https://developer.chrome.com/docs/extensions/reference/api/history)

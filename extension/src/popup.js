@@ -38,9 +38,9 @@ document.getElementById('syncNow').addEventListener('click', async (event) => {
 document.getElementById('initialSync').addEventListener('click', async (event) => {
   event.currentTarget.disabled = true;
   event.currentTarget.textContent = '기록을 준비 중…';
-  const result = await message({ type: 'initial-sync', days: 365 });
+  const result = await message({ type: 'initial-sync', days: 3650 });
   event.currentTarget.disabled = false;
-  event.currentTarget.textContent = result?.error ? '초기 수집 다시 시도' : '지난 365일 기록 가져오기';
+  event.currentTarget.textContent = result?.error ? '기록 가져오기 다시 시도' : 'Chrome 전체 기록 가져오기';
   await refresh();
 });
 

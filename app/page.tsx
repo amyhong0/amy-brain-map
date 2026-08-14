@@ -72,6 +72,8 @@ export default function Home() {
   const [selectedCandidate, setSelectedCandidate] = useState<DiscoveryCandidate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isHistorySyncing, setIsHistorySyncing] = useState(false);
+  const [historySyncMessage, setHistorySyncMessage] = useState('');
   const [error, setError] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [policyDomain, setPolicyDomain] = useState('');
@@ -116,20 +118,46 @@ export default function Home() {
     await loadData(next);
   };
 
-  const runAnalysis = async () => {
-    if (!token) return;
-    setIsAnalyzing(true);
+  const requestHistoryFromChrome = async () => {
+    if (!token || isHistorySyncing) return;
+    setIsHistorySyncing(true);
+    setHistorySyncMessage('Chrome 확장 프로그램에 현재 남아 있는 방문 기록을 요청하는 중…');
     setError('');
     try {
-      const response = await fetch('/api/unconscious/analyze', { method: 'POST', headers: requestHeaders(token) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '새 흔적을 분석하지 못했습니다.');
+      const requestId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      const result = await new Promise<{ queuedFromHistory?: number; synced?: number; error?: string }>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          window.removeEventListener('message', handleMessage);
+          reject(new Error('Chrome 확장 프로그램으로부터 응답이 없습니다. 확장 프로그램의 연결·개인정보 설정에서 이 앱 주소와 개인 보호 키를 다시 저장한 뒤, 이 페이지를 새로고침하세요.'));
+        }, 15_000);
+        function handleMessage(event: MessageEvent) {
+          if (event.source !== window || event.origin !== window.location.origin) return;
+          const response = event.data;
+          if (response?.source !== 'amy-brain-map-extension' || response?.type !== 'initial-history-sync-result' || response?.requestId !== requestId) return;
+          window.clearTimeout(timeoutId);
+          window.removeEventListener('message', handleMessage);
+          resolve(response.result || {});
+        }
+        window.addEventListener('message', handleMessage);
+        window.postMessage({ source: 'amy-brain-map-dashboard', type: 'initial-history-sync', requestId }, window.location.origin);
+      });
+      if (result.error) throw new Error(result.error);
+
+      setIsAnalyzing(true);
+      const analysisResponse = await fetch('/api/unconscious/analyze', { method: 'POST', headers: requestHeaders(token) });
+      const analysisData = await analysisResponse.json();
+      if (!analysisResponse.ok) throw new Error(analysisData.error || '동기화된 흔적을 분석하지 못했습니다.');
       await loadData(token);
-      if (data.candidates?.[0]) setSelectedCandidate(data.candidates[0]);
-    } catch (analysisError) {
-      setError(visitorFacingError(analysisError, '분석 중 오류가 발생했습니다.'));
+      if (analysisData.candidates?.[0]) setSelectedCandidate(analysisData.candidates[0]);
+      const total = Number(result.queuedFromHistory || 0);
+      setHistorySyncMessage(total > 0 ? `${total.toLocaleString('ko-KR')}개의 Chrome 기록을 읽어 지도에 반영했습니다.` : '새로 가져올 Chrome 기록이 없습니다. 확장 프로그램은 이후 방문을 자동으로 동기화합니다.');
+    } catch (syncError) {
+      const message = visitorFacingError(syncError, 'Chrome 기록을 가져오지 못했습니다.');
+      setError(message);
+      setHistorySyncMessage('Chrome 확장 프로그램의 연결 상태를 확인한 뒤 다시 시도하세요.');
     } finally {
       setIsAnalyzing(false);
+      setIsHistorySyncing(false);
     }
   };
 
@@ -214,7 +242,7 @@ export default function Home() {
         <section className="mt-6 grid gap-5 xl:grid-cols-[250px_minmax(0,1fr)_360px] xl:items-start">
           <aside className="brain-card order-2 rounded-3xl p-4 xl:order-1 xl:sticky xl:top-24"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-600"><Network className="h-4 w-4" /></div><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-600">Map lens</p><p className="text-sm font-bold text-slate-900">한눈에 보는 흐름</p></div></div><div className="mt-5 grid grid-cols-2 gap-2"><Metric value={privacy?.totalVisits ?? '—'} label="보호된 신호" /><Metric value={candidates.length} label="관심 축" tone="violet" /><Metric value={summary.pending} label="검토할 연결" tone="amber" /><Metric value={summary.confirmed} label="정착한 연결" tone="green" /></div><div className="mt-5 border-t border-slate-100 pt-4"><p className="text-xs font-bold text-slate-800">지도 읽는 법</p><ul className="mt-3 space-y-3 text-xs leading-5 text-slate-600"><li className="flex gap-2"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />큰 원은 자주 돌아본 관심을 뜻합니다.</li><li className="flex gap-2"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-violet-600" />연결선은 같은 탐색 흐름에서 발견된 가설입니다.</li><li className="flex gap-2"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />질문 결과는 지도에서 즉시 빛납니다.</li></ul></div><div className="mt-5 rounded-2xl bg-slate-50 p-3"><div className="flex items-start gap-2"><Activity className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><p className="text-[11px] leading-5 text-slate-600">{summary.latestRun ? `${summary.latestRun.visitCount}개의 새로운 신호에서 ${summary.latestRun.candidateCount}개의 연결 가설을 만들었습니다.` : 'Chrome 확장 프로그램을 연결하면 탐색의 흔적이 차곡차곡 쌓입니다.'}</p></div></div></aside>
 
-          <div className="order-1 min-w-0 space-y-5 xl:order-2"><section className="relative isolate overflow-hidden rounded-3xl border border-[#3b5449] bg-[#26352f] p-6 text-[#fffaf0] shadow-[0_24px_55px_rgba(38,53,47,.24)] md:p-8"><div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full border border-[#e8c894]/20" /><div aria-hidden="true" className="pointer-events-none absolute -bottom-36 left-[18%] h-64 w-64 rounded-full bg-[#d46845]/[.10] blur-3xl" /><div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-2xl"><p className="text-xs font-extrabold tracking-[0.24em] text-[#e8c894]">THOUGHTS, MADE VISIBLE</p><h2 className="display-serif break-keep mt-4 text-[27px] font-semibold leading-[1.55] tracking-[0.032em] sm:text-5xl sm:leading-[1.38] sm:tracking-[0.04em]">매일의 탐색에 쌓인 관심의 패턴을 자동으로 분석하고,<br />나의 무의식을 발견하세요.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-[#e8e4d7]">Amy Brain Map은 반복 관심, 시간의 흐름, 잠재적 연결을 엮어 기억보다 먼저 움직이는 사고의 궤적을 보여 줍니다.</p></div><button type="button" disabled={!token || isAnalyzing} onClick={runAnalysis} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#d46845] px-4 py-2.5 text-sm font-extrabold text-[#fffaf0] shadow-lg shadow-[#17201c]/25 transition hover:bg-[#be5438] disabled:cursor-not-allowed disabled:opacity-55">{isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isAnalyzing ? '새 연결을 읽는 중…' : '새 흔적 읽어오기'}</button></div></section>
+          <div className="order-1 min-w-0 space-y-5 xl:order-2"><section className="relative isolate overflow-hidden rounded-3xl border border-[#3b5449] bg-[#26352f] p-6 text-[#fffaf0] shadow-[0_24px_55px_rgba(38,53,47,.24)] md:p-8"><div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full border border-[#e8c894]/20" /><div aria-hidden="true" className="pointer-events-none absolute -bottom-36 left-[18%] h-64 w-64 rounded-full bg-[#d46845]/[.10] blur-3xl" /><div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-2xl"><p className="text-xs font-extrabold tracking-[0.24em] text-[#e8c894]">THOUGHTS, MADE VISIBLE</p><h2 className="display-serif break-keep mt-4 text-[27px] font-semibold leading-[1.55] tracking-[0.032em] sm:text-5xl sm:leading-[1.38] sm:tracking-[0.04em]">매일의 탐색에 쌓인 관심의 패턴을 자동으로 분석하고,<br />나의 무의식을 발견하세요.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-[#e8e4d7]">Amy Brain Map은 반복 관심, 시간의 흐름, 잠재적 연결을 엮어 기억보다 먼저 움직이는 사고의 궤적을 보여 줍니다.</p></div><div className="flex shrink-0 flex-col gap-2 lg:items-end"><button type="button" disabled={!token || isHistorySyncing || isAnalyzing} onClick={requestHistoryFromChrome} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#d46845] px-4 py-2.5 text-sm font-extrabold text-[#fffaf0] shadow-lg shadow-[#17201c]/25 transition hover:bg-[#be5438] disabled:cursor-not-allowed disabled:opacity-55">{isHistorySyncing || isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isHistorySyncing ? 'Chrome 기록을 읽는 중…' : isAnalyzing ? '패턴을 분석하는 중…' : 'Chrome 기록 가져오기'}</button><p aria-live="polite" className="max-w-[260px] text-[11px] leading-5 text-[#e8e4d7] lg:text-right">{historySyncMessage || 'Chrome에 현재 남아 있는 방문 기록을 읽어와 지도에 반영합니다.'}</p></div></div></section>
 
             <UnconsciousMap candidates={candidates} selectedId={selectedCandidate?.id} highlightedIds={highlightedIds} onSelect={setSelectedCandidate} />
           </div>

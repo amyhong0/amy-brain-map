@@ -46,10 +46,11 @@ npm run dev
 1. Chrome에서 `chrome://extensions`를 엽니다.
 2. **개발자 모드**를 켭니다.
 3. **압축해제된 확장 프로그램을 로드합니다**를 선택하고 이 저장소의 `extension/` 폴더를 고릅니다.
-4. 설치된 확장 프로그램의 **연결·개인정보 설정**을 열고 앱 주소와 `BROWSER_HISTORY_INGEST_TOKEN` 값을 입력합니다.
-5. 동기화를 켠 뒤 확장 프로그램 팝업에서 **지난 365일 기록 가져오기**를 한 번 실행합니다.
+4. 설치된 확장 프로그램의 **연결·개인정보 설정**을 열고 앱 주소와 `BROWSER_HISTORY_INGEST_TOKEN` 값을 입력한 뒤 저장합니다.
+5. Amy Brain Map 웹 화면으로 돌아와 **Chrome 기록 가져오기**를 누릅니다. 확장 프로그램이 Chrome에 현재 남아 있는 방문 기록을 동기화하고 앱이 이를 분석해 지도에 반영합니다.
+6. 확장 프로그램을 업데이트한 경우 `chrome://extensions`에서 **새로고침**한 뒤, 앱 페이지도 새로고침합니다.
 
-확장 프로그램은 Manifest V3 및 `history`, `storage`, `alarms` 권한만 사용합니다. `history` 권한은 Chrome 방문 기록 API에 필요합니다.[^chrome-history]
+확장 프로그램은 Manifest V3 및 `history`, `storage`, `alarms`, `scripting` 권한을 사용합니다. `history` 권한은 Chrome 방문 기록 API에, `scripting` 권한은 사용자가 누른 웹 화면의 동기화 요청을 확장 프로그램에 안전하게 전달하는 데 필요합니다.[^chrome-history]
 
 ## 에이전트 협업 흐름
 

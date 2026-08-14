@@ -69,6 +69,23 @@ function endpointUrl(endpoint) {
   return `${endpoint.replace(/\/$/, '')}/api/unconscious/visits`;
 }
 
+async function registerDashboardBridge(endpoint) {
+  const url = new URL(endpoint);
+  const matches = [`${url.protocol}//${url.host}/*`];
+  try {
+    await chrome.scripting.unregisterContentScripts({ ids: ['amy-brain-map-dashboard-bridge'] });
+  } catch {
+    // The bridge is not registered yet.
+  }
+  await chrome.scripting.registerContentScripts([{
+    id: 'amy-brain-map-dashboard-bridge',
+    matches,
+    js: ['src/dashboard-bridge.js'],
+    runAt: 'document_idle',
+    persistAcrossSessions: true,
+  }]);
+}
+
 async function syncPending() {
   const settings = await getSettings();
   const queue = await getQueue();
@@ -110,7 +127,7 @@ async function syncPending() {
   }
 }
 
-async function queueInitialHistory(days = 365) {
+async function queueInitialHistory(days = 3650) {
   const startTime = Date.now() - Math.max(1, Math.min(days, 3650)) * 24 * 60 * 60 * 1000;
   const records = await chrome.history.search({ text: '', startTime, maxResults: 100000 });
   await enqueue(records);
@@ -119,11 +136,15 @@ async function queueInitialHistory(days = 365) {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
-  await setState({ status: 'ready' });
+  const settings = await getSettings();
+  if (settings.endpoint) await registerDashboardBridge(settings.endpoint);
+  await setState({ status: settings.enabled ? 'ready' : 'paused' });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
+  const settings = await getSettings();
+  if (settings.endpoint) await registerDashboardBridge(settings.endpoint);
   await syncPending();
 });
 
@@ -156,6 +177,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (!permitted) throw new Error('선택한 앱 주소에 연결할 권한이 필요합니다.');
       const next = { ...current, endpoint, token, enabled, installationId: current.installationId || crypto.randomUUID() };
       await chrome.storage.local.set({ [SETTINGS_KEY]: next });
+      await registerDashboardBridge(endpoint);
       await setState({ status: enabled ? 'ready' : 'paused' });
       sendResponse({ success: true, configured: true });
       if (enabled) await syncPending();

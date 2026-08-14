@@ -1,4 +1,5 @@
 const statusElement = document.getElementById('status');
+const progressElement = document.getElementById('progress');
 const queuedElement = document.getElementById('queued');
 const lastSyncedElement = document.getElementById('lastSynced');
 
@@ -22,6 +23,9 @@ async function message(payload) {
 async function refresh() {
   const state = await message({ type: 'get-state' });
   statusElement.textContent = statusLabel(state);
+  const total = Number(state.totalCount || 0);
+  const synced = Number(state.syncedCount || 0);
+  progressElement.textContent = total > 0 ? `${synced.toLocaleString('ko-KR')} / ${total.toLocaleString('ko-KR')}건` : `${synced.toLocaleString('ko-KR')}건`;
   queuedElement.textContent = `${state.queuedCount || 0}건`;
   lastSyncedElement.textContent = formatDate(state.lastSyncedAt);
 }
@@ -52,3 +56,4 @@ document.getElementById('pause').addEventListener('click', async () => {
 document.getElementById('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 void refresh();
+window.setInterval(() => void refresh(), 1_000);

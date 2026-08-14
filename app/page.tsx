@@ -129,11 +129,23 @@ export default function Home() {
         const timeoutId = window.setTimeout(() => {
           window.removeEventListener('message', handleMessage);
           reject(new Error('Chrome 확장 프로그램으로부터 응답이 없습니다. 확장 프로그램의 연결·개인정보 설정에서 이 앱 주소와 개인 보호 키를 다시 저장한 뒤, 이 페이지를 새로고침하세요.'));
-        }, 15_000);
+        }, 20 * 60 * 1_000);
         function handleMessage(event: MessageEvent) {
           if (event.source !== window || event.origin !== window.location.origin) return;
           const response = event.data;
-          if (response?.source !== 'amy-brain-map-extension' || response?.type !== 'initial-history-sync-result' || response?.requestId !== requestId) return;
+          if (response?.source !== 'amy-brain-map-extension' || response?.requestId !== requestId) return;
+          if (response.type === 'initial-history-sync-started') {
+            setHistorySyncMessage('Chrome 기록을 찾았습니다. 안전하게 동기화를 시작합니다…');
+            return;
+          }
+          if (response.type === 'initial-history-sync-progress') {
+            const state = response.state || {};
+            const total = Number(state.totalCount || 0);
+            const synced = Number(state.syncedCount || 0);
+            if (total > 0) setHistorySyncMessage(`Chrome 기록 동기화 중… ${synced.toLocaleString('ko-KR')} / ${total.toLocaleString('ko-KR')}개`);
+            return;
+          }
+          if (response.type !== 'initial-history-sync-result') return;
           window.clearTimeout(timeoutId);
           window.removeEventListener('message', handleMessage);
           resolve(response.result || {});

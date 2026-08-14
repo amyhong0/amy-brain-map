@@ -86,10 +86,26 @@ async function registerDashboardBridge(endpoint) {
   }]);
 }
 
+async function uploadBatch(settings, visits) {
+  const response = await fetch(endpointUrl(settings.endpoint), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-brain-history-token': settings.token,
+    },
+    body: JSON.stringify({ installationId: settings.installationId, visits }),
+  });
+  if (!response.ok) throw new Error(`동기화 요청이 실패했습니다 (${response.status}).`);
+}
+
+function configuredForSync(settings) {
+  return Boolean(settings.enabled && settings.endpoint && settings.token && settings.installationId);
+}
+
 async function syncPending() {
   const settings = await getSettings();
   const queue = await getQueue();
-  if (!settings.enabled || !settings.endpoint || !settings.token || !settings.installationId) {
+  if (!configuredForSync(settings)) {
     await setState({ queuedCount: queue.length, status: 'needs_configuration' });
     return { synced: 0, queued: queue.length, configured: false };
   }
@@ -101,15 +117,7 @@ async function syncPending() {
   const batch = queue.slice(0, MAX_BATCH_SIZE);
   await setState({ queuedCount: queue.length, status: 'syncing', lastError: '' });
   try {
-    const response = await fetch(endpointUrl(settings.endpoint), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-brain-history-token': settings.token,
-      },
-      body: JSON.stringify({ installationId: settings.installationId, visits: batch }),
-    });
-    if (!response.ok) throw new Error(`동기화 요청이 실패했습니다 (${response.status}).`);
+    await uploadBatch(settings, batch);
     const remaining = queue.slice(batch.length);
     await chrome.storage.local.set({ [QUEUE_KEY]: remaining });
     await setState({
@@ -119,19 +127,40 @@ async function syncPending() {
       lastSyncedAt: new Date().toISOString(),
       lastError: '',
     });
-    if (remaining.length > 0) await syncPending();
-    return { synced: batch.length, queued: remaining.length, configured: true };
+    if (remaining.length > 0) return syncPending();
+    return { synced: batch.length, queued: 0, configured: true };
   } catch (error) {
     await setState({ queuedCount: queue.length, status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
     return { synced: 0, queued: queue.length, configured: true, error: String(error) };
   }
 }
 
-async function queueInitialHistory(days = 3650) {
+async function syncInitialHistory(days = 3650) {
+  const settings = await getSettings();
+  if (!configuredForSync(settings)) {
+    await setState({ status: 'needs_configuration' });
+    return { synced: 0, queued: 0, configured: false, error: '확장 프로그램 연결 설정이 필요합니다.' };
+  }
   const startTime = Date.now() - Math.max(1, Math.min(days, 3650)) * 24 * 60 * 60 * 1000;
-  const records = await chrome.history.search({ text: '', startTime, maxResults: 100000 });
-  await enqueue(records);
-  return records.length;
+  const rawRecords = await chrome.history.search({ text: '', startTime, maxResults: 100000 });
+  const records = rawRecords.map(historyItem).filter(Boolean);
+  const total = records.length;
+  let synced = 0;
+  await setState({ syncedCount: 0, queuedCount: total, totalCount: total, status: 'syncing', lastError: '' });
+
+  try {
+    for (let start = 0; start < total; start += MAX_BATCH_SIZE) {
+      const batch = records.slice(start, start + MAX_BATCH_SIZE);
+      await uploadBatch(settings, batch);
+      synced += batch.length;
+      await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'syncing', lastError: '' });
+    }
+    await setState({ syncedCount: synced, queuedCount: 0, totalCount: total, status: 'idle', lastSyncedAt: new Date().toISOString(), lastError: '' });
+    return { synced, queued: 0, queuedFromHistory: total, configured: true };
+  } catch (error) {
+    await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
+    return { synced, queued: total - synced, queuedFromHistory: total, configured: true, error: String(error) };
+  }
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -184,9 +213,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === 'initial-sync') {
-      const total = await queueInitialHistory(Number(message.days || 365));
-      const sync = await syncPending();
-      sendResponse({ success: true, queuedFromHistory: total, ...sync });
+      sendResponse({ success: true, started: true });
+      await syncInitialHistory(Number(message.days || 3650));
       return;
     }
     if (message.type === 'sync-now') {

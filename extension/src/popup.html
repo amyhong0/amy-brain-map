@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amy's Brain Office 동기화</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; width: 330px; background: #100b20; color: #eee8ff; }
+    main { padding: 18px; }
+    h1 { margin: 0; font-size: 15px; } p { color: #c4b5fd; font-size: 12px; line-height: 1.5; }
+    .card { margin-top: 13px; padding: 12px; border: 1px solid #5b3a91; border-radius: 10px; background: rgba(91, 58, 145, .18); }
+    .row { display:flex; justify-content:space-between; gap:10px; padding:4px 0; font-size:12px; }
+    .label { color:#c4b5fd; } .value { color:#f5f3ff; text-align:right; max-width:180px; overflow-wrap:anywhere; }
+    button { width:100%; margin-top:8px; border:0; border-radius:8px; padding:9px; font-weight:700; cursor:pointer; background:#7c3aed; color:white; }
+    button.secondary { background:#2e2148; border:1px solid #604a8c; } button.danger { background:#4c1d35; border:1px solid #9d174d; }
+    a { display:block; margin-top:12px; color:#c4b5fd; font-size:12px; text-align:center; cursor:pointer; }
+    .note { margin-top:10px; color:#a99bbf; font-size:10px; line-height:1.45; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>무의식 지도 동기화</h1>
+    <p>URL·제목·방문 시각·방문 횟수만 전송합니다. 페이지 본문은 별도 허용 전까지 수집하지 않습니다.</p>
+    <section class="card">
+      <div class="row"><span class="label">상태</span><strong class="value" id="status">확인 중</strong></div>
+      <div class="row"><span class="label">대기 중</span><span class="value" id="queued">0건</span></div>
+      <div class="row"><span class="label">최근 동기화</span><span class="value" id="lastSynced">-</span></div>
+    </section>
+    <button id="syncNow">지금 동기화</button>
+    <button class="secondary" id="initialSync">지난 365일 기록 가져오기</button>
+    <button class="danger" id="pause">수집 일시정지</button>
+    <a id="openOptions">연결·개인정보 설정</a>
+    <div class="note">시크릿 모드 방문은 Chrome 방문 기록에 포함되지 않으며 이 확장 프로그램도 수집하지 않습니다.</div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

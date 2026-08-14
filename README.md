@@ -1,129 +1,95 @@
-# Amy's Brain Office
+# Amy’s Brain Office — Unconscious System Map
 
-개인용 AI 지식 관리 시스템으로, 마법 테마의 인터페이스를 통해 문서를 수집, 분석, 시각화합니다.
+Amy’s Brain Office는 **의식적으로 정리하지 못한 웹 탐색의 흔적을 반복 관심·시간적 흐름·잠재적 연결로 해석하여, 개인의 무의식 체계를 탐색하는 지식 지도**입니다. 이 버전은 수동 URL·파일 등록과 문서 유사도 그래프를 제거하고, Chrome 방문 기록 메타데이터와 다중 에이전트 협업을 중심으로 재설계되었습니다.
 
-## 주요 기능
+## 핵심 경험
 
-- **AI 채팅 인터페이스** - 자연어로 지식을 검색하고 질문
-  - **스마트 문맥 검색**: 사용자의 질문에 포함된 키워드와 시간 정보(예: '어제', '오늘')를 분석하여 수많은 지식 중 가장 연관성 높은 문서를 AI에게 제공
-  - **정확한 문서 인용**: AI가 참고한 문서를 추적하여 채팅창 내에 문서 바로가기 버튼 제공
-- **지식 그래프 시각화** - 문서 간 연관관계를 인터랙티브 그래프로 표현 (대소문자/띄어쓰기 정규화 및 유사도 기반 연결 지원)
-- **파일 및 이미지 업로드** - PDF, Word(.docx), Markdown(.md) 문서 및 이미지(.jpg, .png)를 업로드하여 고정밀 텍스트 추출 및 자동 파싱
-- **웹 스크래핑 및 SNS 파싱** (Enter 키 지원) - URL 입력 시 일반 웹페이지 뿐만 아니라 **인스타그램 캐러셀 게시물(최대 10장) 이미지 내 텍스트까지 완벽하게 추출 및 요약** (길이가 너무 긴 경우 자동 알림 처리)
-- **지식 보관소 및 편집** - 수집된 문서의 히스토리 관리 및 내용 직접 수정 기능 (Vercel Blob 스토리지 연동, 중복 덮어쓰기 지원)
-- **에이전트 대시보드** - 마법사 테마의 작업 현황 모니터링 (대마법사, 룬 마스터, 일루셔니스트, 기록가)
+단일 화면에서 질문을 입력하면 질문 해석자, 기억 탐색자, 시간 해석자, 관계 검증자, 지도 항해자, 응답 구성자가 순차적으로 협업합니다. 예를 들어 “내가 어제 본 것 중에 AI 콘텐츠 제작 관련된 게 뭐더라?”라고 물으면 시간 조건과 키워드를 해석하고, 관련 방문 흔적을 찾은 뒤, 교차 검증된 관심 축과 연결 가설만 지도에서 강조합니다.
 
-## 기술 스택
+| 기능 | 동작 | 개인정보 경계 |
+|---|---|---|
+| **Chrome 방문 기록 동기화** | 과거 기록을 한 번 수집한 뒤 새 방문을 증분 동기화합니다. | URL, 제목, 방문 시각, 방문 횟수만 전송합니다. 시크릿 모드와 본문은 수집하지 않습니다. |
+| **무의식 체계 지도** | 반복 관심은 노드 크기, 탐색 흐름의 연결은 선, 질문 결과는 강조색으로 표시합니다. | 원문 페이지를 상시 보관하지 않습니다. |
+| **발견 인박스** | 반복 관심과 시간적 인접성을 바탕으로 생성한 관계 가설을 승인·제외할 수 있습니다. | 자동 반영 전에는 항상 근거·신뢰도·도메인을 확인할 수 있습니다. |
+| **에이전트 간 교차 검증** | 탐색 에이전트의 방문 근거 ID를 관계 검증 에이전트가 다시 확인한 뒤 지도 에이전트에 전달합니다. | AI 추론은 근거와 구분되어 ‘가설’로 표시됩니다. |
+| **선택적 웹 검색** | 대화창의 **웹 검색** 토글을 켜고 개인 기록에서 직접 근거를 찾지 못했을 때만 공개 웹을 검색합니다. | 개인 방문 이력은 외부 검색 제공자에게 전송하지 않으며, 질문 문장만 검색합니다. |
 
-- **Frontend**: Next.js 16, React 18, TypeScript
-- **Styling**: Tailwind CSS 3.4
-- **Animation**: Framer Motion
-- **Graph**: React Flow
-- **AI**: NVIDIA API, OpenAI 호환
-- **Protocol**: MCP (Model Context Protocol)
+## 빠른 시작
 
-## 시작하기
+### 1. 앱 실행
 
-### 사전 요구사항
+Node.js 18 이상이 필요합니다.
 
-- Node.js 18+
-- npm 또는 yarn
-- NVIDIA API Key
-
-### 설치
-
-1. 저장소를 클론하고 프로젝트 폴더로 이동:
 ```bash
-cd amys-brain-office
-```
-
-2. 의존성 설치:
-```bash
-npm install
-```
-
-3. 환경 변수 설정:
-```bash
-cp .env.example .env
-```
-
-`.env` 파일을 열어 API 키를 입력:
-```env
-NVIDIA_API_KEY=your_nvidia_api_key_here
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-```
-
-4. 개발 서버 실행:
-```bash
+npm ci
+cp .env.example .env.local
 npm run dev
 ```
 
-5. 브라우저에서 [http://localhost:3000](http://localhost:3000) 열기
+개발 서버는 기본적으로 `http://localhost:3000`에서 실행됩니다.
 
-## 프로젝트 구조
+### 2. 환경 변수 설정
 
+아래 값은 개발용 `.env.local` 또는 배포 환경 변수에 설정합니다.
+
+| 변수 | 필수 여부 | 설명 |
+|---|---|---|
+| `BROWSER_HISTORY_INGEST_TOKEN` | 필수 | 앱 대시보드와 Chrome 확장 프로그램을 연결하는 개인 보호 키입니다. 충분히 긴 무작위 값을 사용하세요. |
+| `BROWSER_HISTORY_ENCRYPTION_KEY` | Vercel Blob 사용 시 필수 | Blob 저장소의 방문 기록 데이터를 AES-256-GCM으로 암호화하는 64자리 16진수 키입니다. |
+| `NVIDIA_API_KEY` | 선택 | 대화 응답을 더 자연스럽게 구성합니다. 없으면 근거 기반 요약으로 동작합니다. |
+| `TAVILY_API_KEY` | 선택 | 웹 검색 토글을 켰을 때 개인 기록에 없는 질문을 공개 웹 결과로 보강합니다. |
+
+> `BROWSER_HISTORY_INGEST_TOKEN`과 `BROWSER_HISTORY_ENCRYPTION_KEY`는 절대 커밋하지 마세요. Vercel Blob 환경에서는 암호화 키가 없으면 방문 기록 저장을 거부하도록 구현되어 있습니다.
+
+### 3. Chrome 확장 프로그램 설치
+
+1. Chrome에서 `chrome://extensions`를 엽니다.
+2. **개발자 모드**를 켭니다.
+3. **압축해제된 확장 프로그램을 로드합니다**를 선택하고 이 저장소의 `extension/` 폴더를 고릅니다.
+4. 설치된 확장 프로그램의 **연결·개인정보 설정**을 열고 앱 주소와 `BROWSER_HISTORY_INGEST_TOKEN` 값을 입력합니다.
+5. 동기화를 켠 뒤 확장 프로그램 팝업에서 **지난 365일 기록 가져오기**를 한 번 실행합니다.
+
+확장 프로그램은 Manifest V3 및 `history`, `storage`, `alarms` 권한만 사용합니다. `history` 권한은 Chrome 방문 기록 API에 필요합니다.[^chrome-history]
+
+## 에이전트 협업 흐름
+
+```mermaid
+flowchart LR
+  Q[사용자 질문] --> I[질문 해석자]
+  I --> R[기억 탐색자]
+  I --> T[시간 해석자]
+  R --> V[관계 검증자]
+  T --> V
+  V --> M[지도 항해자]
+  M --> A[응답 구성자]
+  R -. 개인 기록에 근거 없음 + 웹 검색 ON .-> W[웹 정찰자]
+  W --> A
+  A --> UI[답변·근거·실시간 지도 강조]
 ```
-amys-brain-office/
-├── app/
-│   ├── globals.css            # 전역 스타일 (Tailwind + 커스텀 CSS)
-│   ├── layout.tsx             # 루트 레이아웃
-│   └── page.tsx               # 메인 애플리케이션 페이지
-├── components/
-│   ├── agents/
-│   │   └── wizard-tower.tsx   # 마법사 타워 대시보드
-│   ├── chat/
-│   │   └── chat-interface.tsx # AI 채팅 인터페이스
-│   ├── graph/
-│   │   └── knowledge-graph.tsx # 지식 그래프 시각화
-│   └── knowledge/
-│       └── knowledge-history.tsx # 지식 보관소
-├── lib/
-│   └── agents/
-│       └── types.ts           # 에이전트 타입 정의
-├── .env                       # 환경 변수
-├── .env.example               # 환경 변수 템플릿
-├── next.config.mjs            # Next.js 설정
-├── package.json               # 의존성 및 스크립트
-├── tailwind.config.ts         # Tailwind CSS 설정
-├── tsconfig.json              # TypeScript 설정
-└── README.md                  # 프로젝트 문서
-```
 
-## 주요 컴포넌트
+웹 정찰자는 사용자가 대화창에서 웹 검색 토글을 켠 경우에만, 그리고 개인 방문 기록에서 관련 근거를 찾지 못한 경우에만 호출됩니다. 웹 검색 결과는 개인 기록과 분리해 **웹 보강** 표시 및 출처 링크로 보여 줍니다.
 
-### Wizard Tower (`wizard-tower.tsx`)
-마법사 타워는 4개의 존으로 구성된 등각 투영 뷰 대시보드입니다:
-- **대마법사 (Orchestrator)** - 중앙 오케스트레이션 및 작업 분배
-- **룬 마스터 (Text Agent)** - 문서, 텍스트 분석 및 정보 추출
-- **일루셔니스트 (Vision Agent)** - 이미지, 시각 데이터 및 비전 분석
-- **기록가 (Storage Agent)** - 지식 저장 및 관리
+## API 개요
 
-### Chat Interface (`chat-interface.tsx`)
-AI와의 자연어 채팅 인터페이스로, 메시지 히스토리를 유지하며 지식 검색을 지원합니다.
+모든 방문 기록 관련 API는 `x-brain-history-token` 헤더로 보호됩니다.
 
-### Knowledge Graph (`knowledge-graph.tsx`)
-React Flow를 활용한 인터랙티브 지식 그래프로, 문서 간 연관관계를 노드와 엣지로 표현합니다.
+| 경로 | 역할 |
+|---|---|
+| `POST /api/unconscious/visits` | Chrome 확장 프로그램이 방문 메타데이터 배치를 중복 없이 동기화합니다. |
+| `GET/PATCH /api/unconscious/settings` | 보존 기간, 분석 빈도, 도메인 차단·허용 정책을 제어합니다. |
+| `POST /api/unconscious/analyze` | 새 방문 메타데이터에서 반복 관심 및 연결 가설을 생성합니다. |
+| `GET /api/unconscious/analyze` | 발견 후보와 최근 분석 실행 이력을 반환합니다. |
+| `PATCH /api/unconscious/candidates/:id` | 후보를 승인하거나 제외합니다. 승인된 후보는 지도용 지식 문서로 보존됩니다. |
+| `POST /api/unconscious/query` | 다중 에이전트가 질문을 처리하고, 지도 강조 대상·근거 방문·선택적 웹 출처를 반환합니다. |
 
-## 스크립트
+## 검증
 
 ```bash
-npm run dev      # 개발 서버 시작
-npm run build    # 프로덕션 빌드
-npm run lint     # ESLint 실행
+npm run build
 ```
 
-## 특징
+프로덕션 빌드는 TypeScript 검사와 Next.js 최적화 빌드를 함께 수행합니다.
 
-- **테마**: 다크 모 기반의 마법/판타지 테마
-- **반응형**: 모바일, 태블릿, 데스크톱 지원
-- **애니메이션**: Framer Motion을 활용한 부드러운 UI 전환
-- **접근성**: WCAG AAA 준수
+## 참고
 
-## 라이선스
-
-MIT
-
-## 기여
-
-이슈 및 풀 리퀘스트는 언제나 환영입니다!
+[^chrome-history]: [Chrome for Developers — chrome.history API](https://developer.chrome.com/docs/extensions/reference/api/history)

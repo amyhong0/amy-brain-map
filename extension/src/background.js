@@ -1,0 +1,184 @@
+const SETTINGS_KEY = 'brainOfficeSettings';
+const QUEUE_KEY = 'brainOfficeHistoryQueue';
+const STATE_KEY = 'brainOfficeSyncState';
+const SYNC_ALARM = 'brain-office-history-sync';
+const MAX_BATCH_SIZE = 500;
+const MAX_QUEUE_SIZE = 5_000;
+
+const EMPTY_SETTINGS = {
+  endpoint: '',
+  token: '',
+  installationId: '',
+  enabled: false,
+};
+
+async function getSettings() {
+  const stored = await chrome.storage.local.get(SETTINGS_KEY);
+  return { ...EMPTY_SETTINGS, ...(stored[SETTINGS_KEY] || {}) };
+}
+
+async function getQueue() {
+  const stored = await chrome.storage.local.get(QUEUE_KEY);
+  return Array.isArray(stored[QUEUE_KEY]) ? stored[QUEUE_KEY] : [];
+}
+
+async function setState(next) {
+  const current = await chrome.storage.local.get(STATE_KEY);
+  await chrome.storage.local.set({
+    [STATE_KEY]: {
+      syncedCount: 0,
+      queuedCount: 0,
+      ...current[STATE_KEY],
+      ...next,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+}
+
+function historyItem(item) {
+  if (!item || !item.url || !/^https?:\/\//i.test(item.url)) return null;
+  return {
+    url: item.url,
+    title: (item.title || '').slice(0, 300),
+    lastVisitTime: Number(item.lastVisitTime || Date.now()),
+    visitCount: Math.max(1, Number(item.visitCount || 1)),
+  };
+}
+
+function itemKey(item) {
+  return `${item.url}::${item.lastVisitTime}`;
+}
+
+async function enqueue(items) {
+  const cleaned = items.map(historyItem).filter(Boolean);
+  if (cleaned.length === 0) return;
+  const queue = await getQueue();
+  const existing = new Set(queue.map(itemKey));
+  for (const item of cleaned) {
+    if (!existing.has(itemKey(item))) {
+      queue.push(item);
+      existing.add(itemKey(item));
+    }
+  }
+  const compacted = queue.slice(-MAX_QUEUE_SIZE);
+  await chrome.storage.local.set({ [QUEUE_KEY]: compacted });
+  await setState({ queuedCount: compacted.length });
+}
+
+function endpointUrl(endpoint) {
+  return `${endpoint.replace(/\/$/, '')}/api/unconscious/visits`;
+}
+
+async function syncPending() {
+  const settings = await getSettings();
+  const queue = await getQueue();
+  if (!settings.enabled || !settings.endpoint || !settings.token || !settings.installationId) {
+    await setState({ queuedCount: queue.length, status: 'needs_configuration' });
+    return { synced: 0, queued: queue.length, configured: false };
+  }
+  if (queue.length === 0) {
+    await setState({ queuedCount: 0, status: 'idle' });
+    return { synced: 0, queued: 0, configured: true };
+  }
+
+  const batch = queue.slice(0, MAX_BATCH_SIZE);
+  await setState({ queuedCount: queue.length, status: 'syncing', lastError: '' });
+  try {
+    const response = await fetch(endpointUrl(settings.endpoint), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-brain-history-token': settings.token,
+      },
+      body: JSON.stringify({ installationId: settings.installationId, visits: batch }),
+    });
+    if (!response.ok) throw new Error(`동기화 요청이 실패했습니다 (${response.status}).`);
+    const remaining = queue.slice(batch.length);
+    await chrome.storage.local.set({ [QUEUE_KEY]: remaining });
+    await setState({
+      syncedCount: batch.length,
+      queuedCount: remaining.length,
+      status: remaining.length > 0 ? 'queued' : 'idle',
+      lastSyncedAt: new Date().toISOString(),
+      lastError: '',
+    });
+    if (remaining.length > 0) await syncPending();
+    return { synced: batch.length, queued: remaining.length, configured: true };
+  } catch (error) {
+    await setState({ queuedCount: queue.length, status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
+    return { synced: 0, queued: queue.length, configured: true, error: String(error) };
+  }
+}
+
+async function queueInitialHistory(days = 365) {
+  const startTime = Date.now() - Math.max(1, Math.min(days, 3650)) * 24 * 60 * 60 * 1000;
+  const records = await chrome.history.search({ text: '', startTime, maxResults: 100000 });
+  await enqueue(records);
+  return records.length;
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
+  await setState({ status: 'ready' });
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
+  await syncPending();
+});
+
+chrome.history.onVisited.addListener(async (item) => {
+  await enqueue([item]);
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === SYNC_ALARM) await syncPending();
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  (async () => {
+    if (message.type === 'get-state') {
+      const state = await chrome.storage.local.get(STATE_KEY);
+      const settings = await getSettings();
+      sendResponse({ ...(state[STATE_KEY] || {}), configured: Boolean(settings.endpoint && settings.token), enabled: settings.enabled });
+      return;
+    }
+    if (message.type === 'configure') {
+      const current = await getSettings();
+      const endpoint = String(message.endpoint || '').trim().replace(/\/$/, '');
+      const token = String(message.token || '').trim();
+      const enabled = message.enabled === true;
+      if (!/^https?:\/\//i.test(endpoint)) throw new Error('앱 주소는 http:// 또는 https://로 시작해야 합니다.');
+      const url = new URL(endpoint);
+      const originPattern = `${url.protocol}//${url.host}/*`;
+      const hasPermission = await chrome.permissions.contains({ origins: [originPattern] });
+      const permitted = hasPermission || await chrome.permissions.request({ origins: [originPattern] });
+      if (!permitted) throw new Error('선택한 앱 주소에 연결할 권한이 필요합니다.');
+      const next = { ...current, endpoint, token, enabled, installationId: current.installationId || crypto.randomUUID() };
+      await chrome.storage.local.set({ [SETTINGS_KEY]: next });
+      await setState({ status: enabled ? 'ready' : 'paused' });
+      sendResponse({ success: true, configured: true });
+      if (enabled) await syncPending();
+      return;
+    }
+    if (message.type === 'initial-sync') {
+      const total = await queueInitialHistory(Number(message.days || 365));
+      const sync = await syncPending();
+      sendResponse({ success: true, queuedFromHistory: total, ...sync });
+      return;
+    }
+    if (message.type === 'sync-now') {
+      sendResponse(await syncPending());
+      return;
+    }
+    if (message.type === 'pause') {
+      const settings = await getSettings();
+      await chrome.storage.local.set({ [SETTINGS_KEY]: { ...settings, enabled: false } });
+      await setState({ status: 'paused' });
+      sendResponse({ success: true });
+      return;
+    }
+    sendResponse({ error: 'Unknown request.' });
+  })().catch((error) => sendResponse({ error: error instanceof Error ? error.message : String(error) }));
+  return true;
+});

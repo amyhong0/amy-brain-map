@@ -25,7 +25,8 @@ async function refresh() {
   statusElement.textContent = statusLabel(state);
   const total = Number(state.totalCount || 0);
   const synced = Number(state.syncedCount || 0);
-  progressElement.textContent = total > 0 ? `${synced.toLocaleString('ko-KR')} / ${total.toLocaleString('ko-KR')}건` : `${synced.toLocaleString('ko-KR')}건`;
+  const percentage = total > 0 ? Math.min(100, Math.round((synced / total) * 100)) : 0;
+  progressElement.textContent = total > 0 ? `${percentage}% · ${synced.toLocaleString('ko-KR')} / ${total.toLocaleString('ko-KR')}건` : `${synced.toLocaleString('ko-KR')}건`;
   queuedElement.textContent = `${state.queuedCount || 0}건`;
   lastSyncedElement.textContent = formatDate(state.lastSyncedAt);
 }

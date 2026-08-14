@@ -30,6 +30,14 @@ function requestHeaders(token: string) {
   return { 'Content-Type': 'application/json', 'x-brain-history-token': token };
 }
 
+function visitorFacingError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  if (message.includes('BROWSER_HISTORY_ENCRYPTION_KEY')) {
+    return '개인 기록 저장소가 아직 준비되지 않았습니다. 잠시 후 다시 시도하거나 서비스 관리자에게 문의하세요.';
+  }
+  return message || fallback;
+}
+
 function StatusPill({ children, tone = 'violet' }: { children: React.ReactNode; tone?: 'violet' | 'green' | 'amber' | 'slate' }) {
   const styles = {
     violet: 'border-violet-200 bg-violet-50 text-violet-700',
@@ -87,7 +95,7 @@ export default function Home() {
       setCandidates(candidatesData.candidates || []);
       setRuns(candidatesData.recentRuns || []);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '데이터를 불러오는 중 오류가 발생했습니다.');
+      setError(visitorFacingError(loadError, '데이터를 불러오는 중 오류가 발생했습니다.'));
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +127,7 @@ export default function Home() {
       await loadData(token);
       if (data.candidates?.[0]) setSelectedCandidate(data.candidates[0]);
     } catch (analysisError) {
-      setError(analysisError instanceof Error ? analysisError.message : '분석 중 오류가 발생했습니다.');
+      setError(visitorFacingError(analysisError, '분석 중 오류가 발생했습니다.'));
     } finally {
       setIsAnalyzing(false);
     }
@@ -139,7 +147,7 @@ export default function Home() {
       const first = (data.matchedCandidates || [])[0];
       if (first) setSelectedCandidate(first);
     } catch (queryError) {
-      setError(queryError instanceof Error ? queryError.message : '질문 중 오류가 발생했습니다.');
+      setError(visitorFacingError(queryError, '질문 중 오류가 발생했습니다.'));
     } finally {
       setIsLoading(false);
     }
@@ -155,7 +163,7 @@ export default function Home() {
       setCandidates((current) => current.map((item) => item.id === updated.id ? updated : item));
       setSelectedCandidate(updated);
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : '연결 상태를 변경하지 못했습니다.');
+      setError(visitorFacingError(updateError, '연결 상태를 변경하지 못했습니다.'));
     }
   };
 
@@ -169,7 +177,7 @@ export default function Home() {
       setPrivacy(data);
       setPolicyDomain('');
     } catch (policyError) {
-      setError(policyError instanceof Error ? policyError.message : '제외 규칙을 저장하지 못했습니다.');
+      setError(visitorFacingError(policyError, '제외 규칙을 저장하지 못했습니다.'));
     }
   };
 

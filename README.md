@@ -35,7 +35,7 @@ npm run dev
 | 변수 | 필수 여부 | 설명 |
 |---|---|---|
 | `BROWSER_HISTORY_INGEST_TOKEN` | 필수 | 앱 대시보드와 Chrome 확장 프로그램을 연결하는 개인 보호 키입니다. 충분히 긴 무작위 값을 사용하세요. |
-| `BROWSER_HISTORY_ENCRYPTION_KEY` | Vercel Blob 사용 시 필수 | Blob 저장소의 방문 기록 데이터를 AES-256-GCM으로 암호화하는 64자리 16진수 키입니다. |
+| `BROWSER_HISTORY_ENCRYPTION_KEY` | Vercel Blob 사용 시 필수 | Blob 저장소의 방문 기록 데이터를 AES-256-GCM으로 암호화하는 최소 32자의 무작위 비밀 문자열입니다. 64자리 16진수도 그대로 지원합니다. |
 | `NVIDIA_API_KEY` | 선택 | 대화 응답을 더 자연스럽게 구성합니다. 없으면 근거 기반 요약으로 동작합니다. |
 | `TAVILY_API_KEY` | 선택 | 웹 검색 토글을 켰을 때 개인 기록에 없는 질문을 공개 웹 결과로 보강합니다. |
 

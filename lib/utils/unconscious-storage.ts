@@ -128,15 +128,22 @@ function normalizeStore(value: Partial<UnconsciousStore> | null): UnconsciousSto
   };
 }
 
+export function normalizeEncryptionKey(configured: string): Buffer {
+  if (configured.length < 32) {
+    throw new Error('BROWSER_HISTORY_ENCRYPTION_KEY must be at least 32 characters long.');
+  }
+  // Preserve compatibility with the originally documented 64-character hexadecimal key.
+  if (/^[a-fA-F0-9]{64}$/.test(configured)) return Buffer.from(configured, 'hex');
+  // A long random passphrase is deterministically expanded into the 32-byte key AES-256-GCM requires.
+  return crypto.createHash('sha256').update(configured, 'utf8').digest();
+}
+
 function encryptionKey(): Buffer {
   const configured = process.env.BROWSER_HISTORY_ENCRYPTION_KEY?.trim();
   if (!configured) {
-    throw new Error('BROWSER_HISTORY_ENCRYPTION_KEY is required when Vercel Blob storage is enabled. Use a 32-byte random key encoded as 64 hexadecimal characters.');
+    throw new Error('BROWSER_HISTORY_ENCRYPTION_KEY is required when Vercel Blob storage is enabled.');
   }
-  if (!/^[a-fA-F0-9]{64}$/.test(configured)) {
-    throw new Error('BROWSER_HISTORY_ENCRYPTION_KEY must be 64 hexadecimal characters.');
-  }
-  return Buffer.from(configured, 'hex');
+  return normalizeEncryptionKey(configured);
 }
 
 function encrypt(plainText: string): string {

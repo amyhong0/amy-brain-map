@@ -33,8 +33,13 @@ function hash(value: string): string {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-function secureCookie() {
-  return (process.env.NEXT_PUBLIC_APP_URL || '').startsWith('https://');
+function configuredAppOrigin(): string | null {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '');
+  return configured || null;
+}
+
+function secureCookie(request?: NextRequest) {
+  return appOrigin(request).startsWith('https://');
 }
 
 function safeEqual(left: string, right: string): boolean {
@@ -47,12 +52,15 @@ export function sessionCookieName() {
   return SESSION_COOKIE;
 }
 
-export function appOrigin(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+export function appOrigin(request?: NextRequest): string {
+  // OAuth redirects must return to the exact deployed host that received the request.
+  // This keeps renamed Vercel projects and connected custom domains from falling back
+  // to an old NEXT_PUBLIC_APP_URL value.
+  return request?.nextUrl.origin || configuredAppOrigin() || 'http://localhost:3000';
 }
 
-export function googleRedirectUri(): string {
-  return `${appOrigin()}/api/auth/callback`;
+export function googleRedirectUri(request?: NextRequest): string {
+  return `${appOrigin(request)}/api/auth/callback`;
 }
 
 export function createOAuthState(): string {
@@ -69,20 +77,20 @@ export function verifyOAuthState(value: string | undefined): boolean {
   return safeEqual(suppliedSignature, expectedSignature);
 }
 
-export function setOAuthStateCookie(response: NextResponse, state: string) {
+export function setOAuthStateCookie(response: NextResponse, state: string, request?: NextRequest) {
   response.cookies.set(OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
-    secure: secureCookie(),
+    secure: secureCookie(request),
     sameSite: 'lax',
     path: '/',
     maxAge: 10 * 60,
   });
 }
 
-export function clearOAuthStateCookie(response: NextResponse) {
+export function clearOAuthStateCookie(response: NextResponse, request?: NextRequest) {
   response.cookies.set(OAUTH_STATE_COOKIE, '', {
     httpOnly: true,
-    secure: secureCookie(),
+    secure: secureCookie(request),
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
@@ -107,10 +115,10 @@ export async function createSession(userId: string): Promise<{ token: string; ex
   return { token, expiresAt };
 }
 
-export function setSessionCookie(response: NextResponse, token: string, expiresAt: Date) {
+export function setSessionCookie(response: NextResponse, token: string, expiresAt: Date, request?: NextRequest) {
   response.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: secureCookie(),
+    secure: secureCookie(request),
     sameSite: 'lax',
     path: '/',
     expires: expiresAt,

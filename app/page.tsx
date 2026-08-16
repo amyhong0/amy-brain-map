@@ -107,6 +107,18 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const authError = new URLSearchParams(window.location.search).get('authError');
+    if (!authError) return;
+    const messages: Record<string, string> = {
+      configuration: 'Google 로그인 설정이 아직 완료되지 않았습니다. 서비스 운영자가 배포 URL, Google OAuth 키, 세션 비밀값을 확인해야 합니다.',
+      state: '로그인 요청이 만료되었거나 브라우저 보안 확인에 실패했습니다. 다시 시작해 주세요.',
+      oauth: 'Google 로그인 처리 중 오류가 발생했습니다. OAuth Redirect URI와 배포 환경 변수를 확인해 주세요.',
+    };
+    setError(messages[authError] || 'Google 로그인 중 오류가 발생했습니다. 다시 시도해 주세요.');
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     const initialize = async () => {
       try {

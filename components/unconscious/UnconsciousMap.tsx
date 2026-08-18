@@ -67,9 +67,10 @@ function positionFor(index: number, total: number, degree: number, maxDegree: nu
   return { x: width / 2 + Math.cos(angle) * radiusX, y: height / 2 + Math.sin(angle) * radiusY };
 }
 
-function nodeRadius(node: MapNode) {
-  if (node.evidenceVisit) return Math.min(36, 18 + node.count * 2.5);
-  return Math.min(39, 16 + node.count * 3 + node.confidence * 10);
+function nodeRadius(node: MapNode, degree = 0) {
+  const connectionBoost = Math.min(13, degree * 2.15);
+  if (node.evidenceVisit) return Math.min(40, 18 + node.count * 2.5 + connectionBoost * 0.7);
+  return Math.min(46, 16 + node.count * 3 + node.confidence * 10 + connectionBoost);
 }
 
 function readableEvidenceVisitLabel(visit: HighlightedVisit) {
@@ -94,7 +95,7 @@ function resolveNodePositions(nodes: MapNode[], degrees: Map<string, number>, ma
         const dx = right.x - left.x;
         const dy = right.y - left.y;
         const distance = Math.hypot(dx, dy);
-        const requiredDistance = nodeRadius(nodes[leftIndex]) + nodeRadius(nodes[rightIndex]) + 28;
+        const requiredDistance = nodeRadius(nodes[leftIndex], degrees.get(nodes[leftIndex].id) || 0) + nodeRadius(nodes[rightIndex], degrees.get(nodes[rightIndex].id) || 0) + 28;
         if (distance >= requiredDistance) continue;
         const angle = distance > 0.01 ? Math.atan2(dy, dx) : ((leftIndex + 1) * 1.618);
         const push = Math.min(9, (requiredDistance - distance) / 2 + 0.3);
@@ -335,13 +336,13 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                 const isHighlighted = isEvidenceNode || node.candidates.some((item) => highlighted.has(item.id));
                 const isFocused = isSelected || isHighlighted;
                 const isDimmed = hasHighlightedNodes && !isFocused;
-                const baseRadius = nodeRadius(node);
+                const degree = degrees.get(node.id) || 0;
+                const baseRadius = nodeRadius(node, degree);
                 const radius = baseRadius + (isHighlighted ? 5 : 0);
                 const status = statusFor(node);
                 const color = isHighlighted ? '#6ee7ff' : isSelected ? '#ffffff' : STATUS_STYLE[status].color;
                 const labelLimit = isEvidenceNode ? 18 : 12;
                 const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
-                const degree = degrees.get(node.id) || 0;
                 const sway = reedSway(point, pointer);
                 return (
                   <g

@@ -201,19 +201,22 @@ function toSettings(row: DatabaseRow | undefined): UnconsciousSettings {
 /** Initializes a new user's privacy defaults. User identity itself must already be authenticated and stored. */
 export async function ensureUnconsciousUserState(userId: string): Promise<void> {
   const sql = database();
-  await sql.transaction((tx) => [
-    tx.query(
-      `INSERT INTO user_settings (user_id) VALUES ($1)
-       ON CONFLICT (user_id) DO NOTHING`,
-      [userId],
-    ),
-    ...DEFAULT_BLOCKED_DOMAINS.map((domain) => tx.query(
-      `INSERT INTO domain_policies (user_id, domain, mode, collect_content)
-       VALUES ($1, $2, 'block', false)
-       ON CONFLICT (user_id, domain) DO NOTHING`,
-      [userId, domain],
-    )),
-  ]);
+  // 기본 차단 규칙은 사용자 상태가 처음 만들어질 때만 추가한다.
+  // 이후 사용자가 규칙을 삭제하면, 설정을 읽는 과정에서 삭제한 규칙이 다시 생성되어서는 안 된다.
+  await sql.query(
+    `WITH inserted_settings AS (
+       INSERT INTO user_settings (user_id)
+       VALUES ($1)
+       ON CONFLICT (user_id) DO NOTHING
+       RETURNING user_id
+     )
+     INSERT INTO domain_policies (user_id, domain, mode, collect_content)
+     SELECT inserted_settings.user_id, defaults.domain, 'block', false
+     FROM inserted_settings
+     CROSS JOIN UNNEST($2::text[]) AS defaults(domain)
+     ON CONFLICT (user_id, domain) DO NOTHING`,
+    [userId, DEFAULT_BLOCKED_DOMAINS],
+  );
 }
 
 /** Returns only the requesting user's private browsing-history graph data. */

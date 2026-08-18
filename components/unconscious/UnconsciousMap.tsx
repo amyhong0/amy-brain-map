@@ -17,6 +17,7 @@ interface UnconsciousMapProps {
   highlightedIds?: string[];
   highlightedVisits?: HighlightedVisit[];
   onSelect: (candidate: DiscoveryCandidate) => void;
+  onClearHighlights?: () => void;
 }
 
 type CandidateStatus = DiscoveryCandidate['status'];
@@ -161,7 +162,7 @@ function reedSway(point: MapPoint, pointer: MapPoint | null) {
   };
 }
 
-export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect }: UnconsciousMapProps) {
+export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect, onClearHighlights }: UnconsciousMapProps) {
   const [view, setView] = useState<'all' | 'pending' | 'confirmed'>('all');
   const [pointer, setPointer] = useState<MapPoint | null>(null);
   const highlighted = new Set(highlightedIds);
@@ -281,6 +282,11 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const positions = useMemo(() => resolveNodePositions(nodes, degrees, maxDegree, width, height), [nodes, degrees, maxDegree]);
   const hasHighlightedNodes = highlighted.size > 0 || directEvidenceNodeIds.size > 0;
 
+  const handleClearClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!hasHighlightedNodes || !onClearHighlights) return;
+    if (event.target === event.currentTarget || event.target instanceof SVGRectElement) onClearHighlights();
+  };
+
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -317,7 +323,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           </div>
         ) : (
           <>
-            <svg viewBox={`0 0 ${width} ${height}`} className="h-[430px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
+            <svg viewBox={`0 0 ${width} ${height}`} className="h-[430px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
               <desc id="map-description">노드는 탐색 관심 또는 현재 질문에서 직접 찾은 방문 근거를 나타냅니다. 청록색 테두리의 노드는 현재 질문과 관련된 항목입니다. 선은 같은 탐색 흐름 또는 공통 탐색 근거로 확인된 관계를 나타냅니다.</desc>
               <defs>
@@ -360,8 +366,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     role={isEvidenceNode ? undefined : 'button'}
                     tabIndex={isEvidenceNode ? -1 : 0}
                     aria-label={isEvidenceNode ? `${node.label}, 현재 질문의 방문 근거, ${node.evidenceVisit?.domain}, ${node.evidenceVisit?.visitCount}회 방문` : `${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[status].label}, 연결 ${degree}개. 상세 연결 검토 선택`}
-                    onClick={() => { if (candidate) onSelect(candidate); }}
-                    onKeyDown={(event) => { if (candidate && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onSelect(candidate); } }}
+                    onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
+                    onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
                     className={`map-node-reed ${isEvidenceNode ? '' : 'cursor-pointer outline-none'}`}
                     style={{
                       opacity: isDimmed ? 0.3 : 1,
@@ -385,7 +391,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         )}
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 px-5 py-3 text-[11px] text-slate-600 md:px-6">
-        {hasHighlightedNodes && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>현재 질문 관련 항목</span></div>}
+        {hasHighlightedNodes && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>현재 질문 관련 항목 · 빈 곳 또는 강조된 노드를 다시 클릭하면 해제</span></div>}
         {directEvidenceNodeIds.size > 0 && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full border border-cyan-200 bg-cyan-950 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>질문에서 찾은 방문 근거</span></div>}
         {Object.entries(STATUS_STYLE).slice(0, 3).map(([key, style]) => <div className="flex items-center gap-2" key={key}><span className="h-2.5 w-2.5 rounded-full" style={{ background: style.color }} /><span>{style.label}</span></div>)}
         {Object.entries(EDGE_STYLE).map(([key, style]) => <div className="flex items-center gap-2" key={key}><span className="h-0 w-4 border-t-2" style={{ borderColor: style.color, borderStyle: style.dash ? 'dashed' : 'solid' }} /><span>{style.label}</span></div>)}

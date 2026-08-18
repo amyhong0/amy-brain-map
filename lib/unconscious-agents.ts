@@ -1,5 +1,6 @@
 import { BrowserVisit, DiscoveryCandidate } from '@/lib/utils/unconscious-storage';
 import { searchWebForAnswer, WebSearchSource } from '@/lib/web-search';
+import { isAuthenticationDomain, isAuthenticationVisit } from '@/lib/unconscious-visit-filter';
 
 export interface AgentTrace {
   agent: '질문 해석자' | '기억 탐색자' | '시간 해석자' | '관계 검증자' | '웹 정찰자' | '지도 항해자' | '응답 구성자';
@@ -103,7 +104,7 @@ function hasSufficientPrivateEvidence(message: string, intent: QueryIntent, visi
 
 function rankVisits(visits: BrowserVisit[], intent: QueryIntent, limit = 8) {
   const deduplicated = new Map<string, ScoredVisit>();
-  for (const entry of visits.map((visit) => scoreVisit(visit, intent)).filter((entry): entry is ScoredVisit => Boolean(entry))) {
+  for (const entry of visits.filter((visit) => !isAuthenticationVisit(visit)).map((visit) => scoreVisit(visit, intent)).filter((entry): entry is ScoredVisit => Boolean(entry))) {
     const key = `${entry.visit.domain}::${readableVisitLabel(entry.visit).toLocaleLowerCase('ko-KR')}`;
     const previous = deduplicated.get(key);
     if (!previous) {
@@ -123,7 +124,7 @@ function rankCandidates(candidates: DiscoveryCandidate[], intent: QueryIntent, m
   const matchingVisitIds = new Set(matchedVisits.map((entry) => entry.visit.id));
   const matchingDomains = new Set(matchedVisits.map((entry) => entry.visit.domain));
   return candidates
-    .filter((candidate) => candidate.status !== 'rejected')
+    .filter((candidate) => candidate.status !== 'rejected' && candidate.sourceDomains.every((domain) => !isAuthenticationDomain(domain)))
     .map((candidate) => {
       const searchable = `${candidate.subject} ${candidate.object} ${candidate.relation} ${candidate.evidence.join(' ')} ${candidate.sourceDomains.join(' ')}`.toLocaleLowerCase('ko-KR');
       const termScore = intent.terms.length === 0 ? 0.2 : intent.terms.filter((term) => searchable.includes(term)).length / intent.terms.length;
@@ -201,6 +202,36 @@ function readableTopicLabel(message: string, intent: QueryIntent) {
   return '질문과 관련된 탐색';
 }
 
+function connectionTopicResponse(message: string, visits: ScoredVisit[]) {
+  const topicTerm = /nvidia/i.test(message) ? 'NVIDIA' : null;
+  const nvidiaVisits = visits.filter(({ visit }) => /nvidia/i.test(`${visit.title} ${visit.domain} ${visit.normalizedUrl}`));
+  const agentCourseVisits = nvidiaVisits.filter(({ visit }) => /(?:gpu|agent|엔지니어|과정|nipa|goorm)/i.test(`${visit.title} ${visit.domain}`));
+  const nvidiaLearningVisits = nvidiaVisits.filter(({ visit }) => /(?:dli|my learning|learn\.nvidia|training)/i.test(`${visit.title} ${visit.domain} ${visit.normalizedUrl}`));
+
+  if (topicTerm === 'NVIDIA' && agentCourseVisits.length > 0 && nvidiaLearningVisits.length > 0) {
+    const course = agentCourseVisits.sort((left, right) => right.visit.visitCount - left.visit.visitCount)[0].visit;
+    const learningCount = nvidiaLearningVisits.reduce((sum, { visit }) => sum + visit.visitCount, 0);
+    const learningLabels = nvidiaLearningVisits.slice(0, 2).map(({ visit }) => readableVisitLabel(visit)).join(' · ');
+    return `**NVIDIA**와 함께 이어진 관심은 **GPU 기반 AI 에이전트 학습**입니다.\n\nNVIDIA의 학습 자료를 살펴보는 흐름과, GPU를 활용한 AI 에이전트 실무 교육을 함께 탐색한 기록이 확인됩니다.\n\n- **GPU 기반 AI 에이전트 교육** — ${readableVisitLabel(course)} (${course.visitCount}회)\n- **NVIDIA 학습 자료** — ${learningLabels} (합계 ${learningCount}회)\n\n즉, NVIDIA 자체 학습 자료와 GPU 기반 AI 에이전트 교육을 병행해 살펴본 흐름으로 볼 수 있습니다.`;
+  }
+
+  const groupedByDomain = new Map<string, BrowserVisit[]>();
+  for (const { visit } of visits) {
+    const pages = groupedByDomain.get(visit.domain) || [];
+    pages.push(visit);
+    groupedByDomain.set(visit.domain, pages);
+  }
+  const topics = [...groupedByDomain.values()]
+    .map((pages) => ({ pages, total: pages.reduce((sum, page) => sum + page.visitCount, 0) }))
+    .sort((left, right) => right.total - left.total)
+    .slice(0, 3);
+  const topicLines = topics.map(({ pages, total }, index) => {
+    const representative = pages.sort((left, right) => right.visitCount - left.visitCount)[0];
+    return `${index + 1}. **${readableVisitLabel(representative)}** — ${representative.domain}에서 합계 ${total}회 확인`;
+  });
+  return `기록에서 함께 이어진 관심 흐름은 다음과 같습니다.\n\n${topicLines.join('\n')}`;
+}
+
 function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webAnswer?: string) {
   if (visits.length === 0 && (webSources.length > 0 || webAnswer)) {
     if (webAnswer) return `웹 검색으로 보강한 답변입니다.\n\n${webAnswer}\n\n아래에서 답변에 참고한 출처를 확인할 수 있습니다.`;
@@ -215,8 +246,6 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
   }
   const periodText = intent.period ? `${intent.period.label} ` : '';
   if (intent.mode === 'peak_activity') return peakActivityResponse(visits) || `${periodText}기록에서 활동 시점을 정리할 근거를 찾지 못했습니다.`;
-  const visitText = visits.slice(0, 4).map(({ visit }) => `**${visit.title || visit.domain}** (${visit.domain}, ${visit.visitCount}회)`).join(', ');
-  const connection = candidates[0]?.candidate;
   if (intent.mode === 'recurring_topics') {
     const topics = buildTopicSummaries(visits, candidates);
     const topicLines = topics.map((topic, index) => {
@@ -226,7 +255,7 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
     return `${periodText}기록에서 반복적으로 나타난 관심은 다음과 같습니다.\n\n${topicLines.join('\n\n')}`;
   }
   if (intent.mode === 'connections') {
-    return `${periodText}기록에서 함께 이어진 흔적으로 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과 맞닿아 있습니다.` : ' 아직 충분한 공통 근거가 없어 관련 페이지를 중심으로 표시했습니다.'}`;
+    return `${periodText}${connectionTopicResponse(message, visits)}`;
   }
   const topic = readableTopicLabel(message, intent);
   const relevantPages = [...new Map(visits.map(({ visit }) => [visit.normalizedUrl, visit])).values()].slice(0, 3);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/unconscious-auth';
+import { isAuthenticationDomain, isAuthenticationVisit } from '@/lib/unconscious-visit-filter';
 import { createBackupIfDue } from '@/lib/gcs-archive';
 import {
   AnalysisRun,
@@ -43,8 +44,9 @@ function humanLabel(term: string): string {
 }
 
 function createCandidates(visits: BrowserVisit[], runId: string, now: string, autoApplyThreshold: number): DiscoveryCandidate[] {
+  const meaningfulVisits = visits.filter((visit) => !isAuthenticationVisit(visit));
   const signals = new Map<string, { visits: BrowserVisit[]; domains: Set<string>; totalVisitCount: number }>();
-  for (const visit of visits) {
+  for (const visit of meaningfulVisits) {
     for (const term of termsFromVisit(visit)) {
       const signal = signals.get(term) || { visits: [], domains: new Set<string>(), totalVisitCount: 0 };
       signal.visits.push(visit);
@@ -69,7 +71,7 @@ function createCandidates(visits: BrowserVisit[], runId: string, now: string, au
     });
   }
 
-  const chronological = [...visits].sort((a, b) => a.lastVisitTime - b.lastVisitTime);
+  const chronological = [...meaningfulVisits].sort((a, b) => a.lastVisitTime - b.lastVisitTime);
   const bridgeSeen = new Set<string>();
   for (let index = 0; index < chronological.length - 1; index += 1) {
     const left = chronological[index];
@@ -111,6 +113,7 @@ export async function POST(request: NextRequest) {
     const eligible = store.visits
       .filter((visit) => visit.lastVisitTime > (store.settings.lastAnalyzedAt ? Date.parse(store.settings.lastAnalyzedAt) : 0))
       .filter((visit) => !isDomainBlocked(visit.domain, store.policies))
+      .filter((visit) => !isAuthenticationVisit(visit))
       .sort((a, b) => b.lastVisitTime - a.lastVisitTime)
       .slice(0, store.settings.maxVisitsPerRun);
     const generated = createCandidates(eligible, run.id, new Date().toISOString(), store.settings.autoApplyThreshold);
@@ -146,7 +149,8 @@ export async function GET(request: NextRequest) {
       listRecentAnalysisRuns(auth.user.id, 10),
       loadUnconsciousStore(auth.user.id).then((store) => store.settings),
     ]);
-    return NextResponse.json({ candidates: candidates.map(publicCandidate), recentRuns, lastAnalyzedAt: settings.lastAnalyzedAt });
+    const displayCandidates = candidates.filter((candidate) => candidate.sourceDomains.every((domain) => !isAuthenticationDomain(domain)));
+    return NextResponse.json({ candidates: displayCandidates.map(publicCandidate), recentRuns, lastAnalyzedAt: settings.lastAnalyzedAt });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to load discovery candidates.' }, { status: 500 });
   }

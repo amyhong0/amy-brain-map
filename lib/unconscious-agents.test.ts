@@ -274,3 +274,64 @@ describe('cross-language topic retrieval', () => {
     expect(result.answer).toContain('Brain Map research notes');
   });
 });
+
+
+describe('connection-topic summaries', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = '';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('excludes authentication pages and summarizes NVIDIA evidence as GPU-based AI-agent learning', async () => {
+    const nvidiaCourse = visit({
+      id: 'visit-nvidia-agent-course',
+      normalizedUrl: 'https://seoul-ict.goorm.io/course/nipa-nvidia-agent',
+      url: 'https://seoul-ict.goorm.io/course/nipa-nvidia-agent',
+      title: '[KSTA] NIPA-NVIDIA GPU 가속 기반 AI Agent 엔지니어 과정(2단계)',
+      domain: 'seoul-ict.goorm.io',
+      visitCount: 31,
+    });
+    const login = visit({
+      id: 'visit-goorm-login',
+      normalizedUrl: 'https://accounts.goorm.io/login',
+      url: 'https://accounts.goorm.io/login',
+      title: '구름 서비스 로그인',
+      domain: 'accounts.goorm.io',
+      visitCount: 14,
+    });
+    const dli = visit({
+      id: 'visit-nvidia-dli',
+      normalizedUrl: 'https://learn.nvidia.com/dli-event',
+      url: 'https://learn.nvidia.com/dli-event',
+      title: 'DLI Event | NVIDIA',
+      domain: 'learn.nvidia.com',
+      visitCount: 17,
+    });
+    const learning = visit({
+      id: 'visit-nvidia-learning',
+      normalizedUrl: 'https://learn.nvidia.com/my-learning',
+      url: 'https://learn.nvidia.com/my-learning',
+      title: 'My Learning | NVIDIA',
+      domain: 'learn.nvidia.com',
+      visitCount: 26,
+    });
+    const authBackedCandidate = candidate({
+      id: 'candidate-nvidia-auth-bridge',
+      subject: 'Nvidia',
+      object: 'accounts.goorm.io · seoul-ict.goorm.io',
+      sourceVisitIds: ['visit-goorm-login', 'visit-nvidia-agent-course'],
+      sourceDomains: ['accounts.goorm.io', 'seoul-ict.goorm.io'],
+    });
+
+    const result = await runUnconsciousQuery('“Nvidia”와 연결된 다른 관심은 뭐야?', [nvidiaCourse, login, dli, learning], [authBackedCandidate], false);
+
+    expect(result.matchedVisits.map((entry) => entry.id)).not.toContain('visit-goorm-login');
+    expect(result.highlightedCandidateIds).toHaveLength(0);
+    expect(result.answer).toContain('GPU 기반 AI 에이전트 학습');
+    expect(result.answer).toContain('NVIDIA 학습 자료');
+    expect(result.answer).toContain('합계 43회');
+    expect(result.answer).not.toContain('구름 서비스 로그인');
+    expect(result.answer).not.toContain('accounts.goorm.io');
+    expect(result.answer).not.toContain('연결 가설');
+  });
+});

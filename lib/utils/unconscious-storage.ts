@@ -444,6 +444,18 @@ export async function updateCandidateStatus(userId: string, candidateId: string,
   return rows[0] ? toCandidate(rows[0] as DatabaseRow) : null;
 }
 
+/** Marks only this user's pending discovery candidates as approved for their private map. */
+export async function approveAllPendingCandidates(userId: string): Promise<DiscoveryCandidate[]> {
+  const rows = await database().query(
+    `UPDATE discovery_candidates
+     SET status = 'approved', updated_at = NOW()
+     WHERE user_id = $1 AND status = 'pending'
+     RETURNING *`,
+    [userId],
+  );
+  return rows.map((row) => toCandidate(row as DatabaseRow));
+}
+
 export async function setCandidatePromotedDocument(userId: string, candidateId: string, documentId: string): Promise<void> {
   await database().query(
     `UPDATE discovery_candidates SET promoted_document_id = $3, updated_at = NOW()

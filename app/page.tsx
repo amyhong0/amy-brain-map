@@ -99,8 +99,17 @@ function ChatMarkdown({ content }: { content: string }) {
   return <div className="space-y-3 text-sm font-medium leading-6 text-slate-800">
     {blocks.map((block, blockIndex) => {
       const lines = block.split('\n').filter(Boolean);
+      const heading = lines.length === 1 ? lines[0].match(/^(#{1,6})\s+(.+?)\s*#*$/) : null;
+      const quote = lines.map((line) => line.match(/^>\s?(.*)$/));
       const ordered = lines.map((line) => line.match(/^(\d+)\.\s+(.+)$/));
       const bullet = lines.map((line) => line.match(/^[-*]\s+(.+)$/));
+      if (heading) {
+        const level = heading[1].length;
+        const style = level <= 2 ? 'text-base font-extrabold text-slate-950' : 'text-sm font-extrabold text-slate-900';
+        return <h3 key={blockIndex} className={style}>{renderInlineMarkdown(heading[2])}</h3>;
+      }
+      if (lines.length === 1 && /^(?:-{3,}|\*{3,}|_{3,})$/.test(lines[0].trim())) return <hr key={blockIndex} className="border-slate-200" />;
+      if (quote.every(Boolean)) return <blockquote key={blockIndex} className="border-l-2 border-violet-300 pl-3 text-slate-600">{quote.map((match, index) => <React.Fragment key={index}>{renderInlineMarkdown(match?.[1] || '')}{index < quote.length - 1 && <br />}</React.Fragment>)}</blockquote>;
       if (ordered.every(Boolean)) return <ol key={blockIndex} className="list-decimal space-y-1.5 pl-5 marker:font-bold marker:text-violet-700">{ordered.map((match, index) => <li key={index}>{renderInlineMarkdown(match?.[2] || '')}</li>)}</ol>;
       if (bullet.every(Boolean)) return <ul key={blockIndex} className="list-disc space-y-1.5 pl-5 marker:text-violet-600">{bullet.map((match, index) => <li key={index}>{renderInlineMarkdown(match?.[1] || '')}</li>)}</ul>;
       return <p key={blockIndex}>{lines.map((line, index) => <React.Fragment key={index}>{renderInlineMarkdown(line)}{index < lines.length - 1 && <br />}</React.Fragment>)}</p>;

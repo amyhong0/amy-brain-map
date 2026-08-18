@@ -234,3 +234,19 @@ describe('web search relevance gate', () => {
     expect(result.highlightedCandidateIds).toEqual(['candidate-ai-1']);
   });
 });
+
+
+describe('visit-backed map highlighting', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = '';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('returns matching visit IDs for map emphasis even when no candidate relationship exists', async () => {
+    const result = await runUnconsciousQuery('내가 본 AI 콘텐츠 제작 관련 페이지는 뭐야?', [visit()], [], false);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.highlightedCandidateIds).toHaveLength(0);
+    expect(result.highlightedVisitIds).toEqual(['visit-ai-1']);
+  });
+});

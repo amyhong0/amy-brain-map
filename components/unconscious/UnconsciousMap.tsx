@@ -4,10 +4,18 @@ import React, { useMemo, useState } from 'react';
 import { CircleDot, Focus, Network } from 'lucide-react';
 import { DiscoveryCandidate } from './types';
 
+interface HighlightedVisit {
+  id: string;
+  title: string;
+  domain: string;
+  visitCount: number;
+}
+
 interface UnconsciousMapProps {
   candidates: DiscoveryCandidate[];
   selectedId?: string;
   highlightedIds?: string[];
+  highlightedVisits?: HighlightedVisit[];
   onSelect: (candidate: DiscoveryCandidate) => void;
 }
 
@@ -20,6 +28,7 @@ interface MapNode {
   confidence: number;
   count: number;
   candidates: DiscoveryCandidate[];
+  evidenceVisit?: HighlightedVisit;
 }
 
 interface MapEdge {
@@ -59,7 +68,14 @@ function positionFor(index: number, total: number, degree: number, maxDegree: nu
 }
 
 function nodeRadius(node: MapNode) {
+  if (node.evidenceVisit) return Math.min(36, 18 + node.count * 2.5);
   return Math.min(39, 16 + node.count * 3 + node.confidence * 10);
+}
+
+function readableEvidenceVisitLabel(visit: HighlightedVisit) {
+  const title = visit.title.replace(/\s+/g, ' ').trim();
+  const compact = title.split('|')[0]?.trim() || title || visit.domain;
+  return compact.length > 22 ? `${compact.slice(0, 22)}…` : compact;
 }
 
 function resolveNodePositions(nodes: MapNode[], degrees: Map<string, number>, maxDegree: number, width: number, height: number) {
@@ -135,13 +151,14 @@ function reedSway(point: MapPoint, pointer: MapPoint | null) {
   };
 }
 
-export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], onSelect }: UnconsciousMapProps) {
+export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect }: UnconsciousMapProps) {
   const [view, setView] = useState<'all' | 'pending' | 'confirmed'>('all');
   const [pointer, setPointer] = useState<MapPoint | null>(null);
   const highlighted = new Set(highlightedIds);
   const highlightedKey = highlightedIds.slice().sort().join('|');
+  const highlightedVisitKey = highlightedVisits.map((visit) => visit.id).sort().join('|');
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes, edges, directEvidenceNodeIds } = useMemo(() => {
     const visible = candidates.filter((candidate) => {
       if (view === 'pending') return candidate.status === 'pending';
       if (view === 'confirmed') return candidate.status === 'approved' || candidate.status === 'auto_applied';
@@ -165,14 +182,28 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       if (candidate.kind === 'bridge' && candidate.object) addNodeCandidate(candidate.object, candidate);
     }
 
-    const graphNodes = [...grouped.values()]
-      .sort((left, right) => {
-        const leftHighlighted = left.candidates.some((candidate) => highlighted.has(candidate.id));
-        const rightHighlighted = right.candidates.some((candidate) => highlighted.has(candidate.id));
-        return Number(rightHighlighted) - Number(leftHighlighted) || right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR');
-      })
-      .slice(0, 18);
+    const evidenceById = new Map<string, HighlightedVisit>();
+    for (const visit of highlightedVisits) evidenceById.set(visit.id, visit);
+    const evidenceNodes = [...evidenceById.values()].slice(0, 4).map((visit) => ({
+      id: `visit:${visit.id}`,
+      label: readableEvidenceVisitLabel(visit),
+      confidence: 1,
+      count: Math.max(1, visit.visitCount),
+      candidates: [],
+      evidenceVisit: visit,
+    }));
+    const graphNodes = [
+      ...evidenceNodes,
+      ...[...grouped.values()]
+        .sort((left, right) => {
+          const leftHighlighted = left.candidates.some((candidate) => highlighted.has(candidate.id));
+          const rightHighlighted = right.candidates.some((candidate) => highlighted.has(candidate.id));
+          return Number(rightHighlighted) - Number(leftHighlighted) || right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR');
+        })
+        .slice(0, Math.max(0, 18 - evidenceNodes.length)),
+    ];
     const nodeIds = new Set(graphNodes.map((node) => node.id));
+    const directEvidenceNodeIds = new Set(evidenceNodes.map((node) => node.id));
     const edgesByPair = new Map<string, MapEdge>();
 
     const addEdge = (edge: MapEdge) => {
@@ -185,6 +216,17 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         existing.candidateIds = [...new Set([...existing.candidateIds, ...edge.candidateIds])];
       }
     };
+
+    for (const evidenceNode of evidenceNodes) {
+      for (const otherEvidenceNode of evidenceNodes) {
+        if (evidenceNode.id >= otherEvidenceNode.id || evidenceNode.evidenceVisit?.domain !== otherEvidenceNode.evidenceVisit?.domain) continue;
+        addEdge({ id: `query-domain:${evidenceNode.id}:${otherEvidenceNode.id}`, source: evidenceNode.id, target: otherEvidenceNode.id, kind: 'cooccurrence', score: 0.92, candidateIds: [] });
+      }
+      for (const topicNode of graphNodes.filter((node) => node.candidates.length > 0)) {
+        const sharesDomain = topicNode.candidates.some((candidate) => candidate.sourceDomains.includes(evidenceNode.evidenceVisit?.domain || ''));
+        if (sharesDomain) addEdge({ id: `query-topic:${evidenceNode.id}:${topicNode.id}`, source: evidenceNode.id, target: topicNode.id, kind: 'shared-domain', score: 0.86, candidateIds: [] });
+      }
+    }
 
     for (const candidate of visible) {
       if (candidate.kind !== 'bridge' || !candidate.object) continue;
@@ -211,8 +253,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       }
     }
 
-    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 28) };
-  }, [candidates, view, highlightedKey]);
+    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 28), directEvidenceNodeIds };
+  }, [candidates, view, highlightedKey, highlightedVisitKey]);
 
   const width = 920;
   const height = 535;
@@ -226,7 +268,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   }, [nodes, edges]);
   const maxDegree = Math.max(0, ...degrees.values());
   const positions = useMemo(() => resolveNodePositions(nodes, degrees, maxDegree, width, height), [nodes, degrees, maxDegree]);
-  const hasHighlightedNodes = highlighted.size > 0;
+  const hasHighlightedNodes = highlighted.size > 0 || directEvidenceNodeIds.size > 0;
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -266,7 +308,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           <>
             <svg viewBox={`0 0 ${width} ${height}`} className="h-[430px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
-              <desc id="map-description">노드는 탐색 관심을 나타냅니다. 청록색 테두리의 노드는 현재 질문과 관련된 항목입니다. 선은 같은 탐색 흐름 또는 공통 탐색 근거로 확인된 관심 간 관계를 나타냅니다.</desc>
+              <desc id="map-description">노드는 탐색 관심 또는 현재 질문에서 직접 찾은 방문 근거를 나타냅니다. 청록색 테두리의 노드는 현재 질문과 관련된 항목입니다. 선은 같은 탐색 흐름 또는 공통 탐색 근거로 확인된 관계를 나타냅니다.</desc>
               <defs>
                 <pattern id="dotGrid" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#9db5ff" opacity=".24" /></pattern>
                 <radialGradient id="mapCenter" cx="50%" cy="46%" r="52%"><stop offset="0%" stopColor="#4b67a0" stopOpacity=".34" /><stop offset="65%" stopColor="#101114" stopOpacity=".2" /><stop offset="100%" stopColor="#050506" stopOpacity="0" /></radialGradient>
@@ -279,7 +321,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                 const source = positions.get(edge.source);
                 const target = positions.get(edge.target);
                 if (!source || !target) return null;
-                const isActive = edge.candidateIds.includes(selectedId || '') || edge.candidateIds.some((id) => highlighted.has(id));
+                const isActive = edge.candidateIds.includes(selectedId || '') || edge.candidateIds.some((id) => highlighted.has(id)) || directEvidenceNodeIds.has(edge.source) || directEvidenceNodeIds.has(edge.target);
                 const style = EDGE_STYLE[edge.kind];
                 const sourceSway = reedSway(source, pointer);
                 const targetSway = reedSway(target, pointer);
@@ -289,25 +331,27 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                 const point = positions.get(node.id)!;
                 const candidate = node.candidates[0];
                 const isSelected = node.candidates.some((item) => item.id === selectedId);
-                const isHighlighted = node.candidates.some((item) => highlighted.has(item.id));
+                const isEvidenceNode = Boolean(node.evidenceVisit);
+                const isHighlighted = isEvidenceNode || node.candidates.some((item) => highlighted.has(item.id));
                 const isFocused = isSelected || isHighlighted;
                 const isDimmed = hasHighlightedNodes && !isFocused;
                 const baseRadius = nodeRadius(node);
                 const radius = baseRadius + (isHighlighted ? 5 : 0);
                 const status = statusFor(node);
                 const color = isHighlighted ? '#6ee7ff' : isSelected ? '#ffffff' : STATUS_STYLE[status].color;
-                const label = node.label.length > 12 ? `${node.label.slice(0, 12)}…` : node.label;
+                const labelLimit = isEvidenceNode ? 18 : 12;
+                const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
                 const degree = degrees.get(node.id) || 0;
                 const sway = reedSway(point, pointer);
                 return (
                   <g
                     key={node.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[status].label}, 연결 ${degree}개. 상세 연결 검토 선택`}
-                    onClick={() => onSelect(candidate)}
-                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(candidate); } }}
-                    className="map-node-reed cursor-pointer outline-none"
+                    role={isEvidenceNode ? undefined : 'button'}
+                    tabIndex={isEvidenceNode ? -1 : 0}
+                    aria-label={isEvidenceNode ? `${node.label}, 현재 질문의 방문 근거, ${node.evidenceVisit?.domain}, ${node.evidenceVisit?.visitCount}회 방문` : `${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[status].label}, 연결 ${degree}개. 상세 연결 검토 선택`}
+                    onClick={() => { if (candidate) onSelect(candidate); }}
+                    onKeyDown={(event) => { if (candidate && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onSelect(candidate); } }}
+                    className={`map-node-reed ${isEvidenceNode ? '' : 'cursor-pointer outline-none'}`}
                     style={{
                       opacity: isDimmed ? 0.3 : 1,
                       transformBox: 'fill-box',
@@ -320,7 +364,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     <circle cx={point.x} cy={point.y} r={radius + 12 + sway.strength * 5} fill={color} opacity={isFocused ? .3 : .07} filter="url(#nodeGlow)" />
                     <circle cx={point.x} cy={point.y} r={radius} fill={isHighlighted ? '#102c42' : '#111319'} stroke={color} strokeWidth={isFocused ? 3.6 : 1.7} />
                     <text x={point.x} y={point.y + 4} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="700" pointerEvents="none">{label}</text>
-                    <text x={point.x} y={point.y + radius + 17} textAnchor="middle" fill={isHighlighted ? '#9ff3ff' : '#a9b0bf'} fontSize="9" fontWeight="600" pointerEvents="none">{isHighlighted ? '질문 관련' : degree > 0 ? `연결 ${degree}개` : '단서 수집 중'}</text>
+                    <text x={point.x} y={point.y + radius + 17} textAnchor="middle" fill={isHighlighted ? '#9ff3ff' : '#a9b0bf'} fontSize="9" fontWeight="600" pointerEvents="none">{isEvidenceNode ? '방문 근거' : isHighlighted ? '질문 관련' : degree > 0 ? `연결 ${degree}개` : '단서 수집 중'}</text>
                   </g>
                 );
               })}
@@ -331,6 +375,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 px-5 py-3 text-[11px] text-slate-600 md:px-6">
         {hasHighlightedNodes && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>현재 질문 관련 항목</span></div>}
+        {directEvidenceNodeIds.size > 0 && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full border border-cyan-200 bg-cyan-950 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>질문에서 찾은 방문 근거</span></div>}
         {Object.entries(STATUS_STYLE).slice(0, 3).map(([key, style]) => <div className="flex items-center gap-2" key={key}><span className="h-2.5 w-2.5 rounded-full" style={{ background: style.color }} /><span>{style.label}</span></div>)}
         {Object.entries(EDGE_STYLE).map(([key, style]) => <div className="flex items-center gap-2" key={key}><span className="h-0 w-4 border-t-2" style={{ borderColor: style.color, borderStyle: style.dash ? 'dashed' : 'solid' }} /><span>{style.label}</span></div>)}
         <div className="ml-auto flex items-center gap-1.5 text-blue-700"><Focus className="h-3.5 w-3.5" aria-hidden="true" />관심 축 {nodes.length}개 · 관계선 {edges.length}개</div>

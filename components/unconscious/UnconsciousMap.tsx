@@ -123,6 +123,15 @@ function canonicalPair(left: string, right: string) {
   return [left, right].sort((a, b) => a.localeCompare(b)).join('::');
 }
 
+function topicNodeId(label: string) {
+  return `topic:${label.trim().toLocaleLowerCase('en-US')}`;
+}
+
+function readableTopicLabel(label: string) {
+  const normalized = label.replace(/\s+/g, ' ').trim();
+  return normalized.toLocaleLowerCase('en-US') === 'ai' ? 'AI' : normalized;
+}
+
 function statusFor(node: MapNode): CandidateStatus {
   if (node.candidates.some((candidate) => candidate.status === 'approved')) return 'approved';
   if (node.candidates.some((candidate) => candidate.status === 'auto_applied')) return 'auto_applied';
@@ -168,13 +177,14 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
 
     const grouped = new Map<string, MapNode>();
     const addNodeCandidate = (label: string, candidate: DiscoveryCandidate) => {
-      const existing = grouped.get(label);
+      const id = topicNodeId(label);
+      const existing = grouped.get(id);
       if (existing) {
         existing.count += 1;
         existing.confidence = Math.max(existing.confidence, candidate.confidence);
         existing.candidates.push(candidate);
       } else {
-        grouped.set(label, { id: `topic:${label}`, label, confidence: candidate.confidence, count: 1, candidates: [candidate] });
+        grouped.set(id, { id, label: readableTopicLabel(label), confidence: candidate.confidence, count: 1, candidates: [candidate] });
       }
     };
 
@@ -231,13 +241,13 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
 
     for (const candidate of visible) {
       if (candidate.kind !== 'bridge' || !candidate.object) continue;
-      const source = `topic:${candidate.subject}`;
-      const target = `topic:${candidate.object}`;
+      const source = topicNodeId(candidate.subject);
+      const target = topicNodeId(candidate.object);
       if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) continue;
       addEdge({ id: `journey:${candidate.id}`, source, target, kind: 'journey', score: candidate.confidence, candidateIds: [candidate.id] });
     }
 
-    const interests = visible.filter((candidate) => candidate.kind !== 'bridge' && nodeIds.has(`topic:${candidate.subject}`));
+    const interests = visible.filter((candidate) => candidate.kind !== 'bridge' && nodeIds.has(topicNodeId(candidate.subject)));
     for (let index = 0; index < interests.length; index += 1) {
       for (let otherIndex = index + 1; otherIndex < interests.length; otherIndex += 1) {
         const left = interests[index];
@@ -246,8 +256,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         const sharedVisits = hasOverlap(left.sourceVisitIds, right.sourceVisitIds);
         const sharedDomains = hasOverlap(left.sourceDomains, right.sourceDomains);
         if (sharedVisits.length === 0 && sharedDomains.length === 0) continue;
-        const source = `topic:${left.subject}`;
-        const target = `topic:${right.subject}`;
+        const source = topicNodeId(left.subject);
+        const target = topicNodeId(right.subject);
         const kind: EdgeKind = sharedVisits.length > 0 ? 'cooccurrence' : 'shared-domain';
         const score = Math.min(0.78, Math.max(left.confidence, right.confidence) * 0.8 + (sharedVisits.length > 0 ? 0.14 : 0.06));
         addEdge({ id: `${kind}:${left.id}:${right.id}`, source, target, kind, score, candidateIds: [left.id, right.id] });

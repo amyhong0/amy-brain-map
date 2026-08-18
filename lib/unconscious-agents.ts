@@ -21,6 +21,8 @@ interface ScoredVisit {
 }
 
 const SEMANTIC_QUERY_HINTS: Record<string, string[]> = {
+  '뇌': ['brain', 'cognitive', 'neural', 'neuroscience'],
+  '브레인': ['brain', 'cognitive', 'neural'],
   'ai': ['openai', 'gpt', 'llm', 'agent', 'gemini', 'claude', 'copilot'],
   '콘텐츠': ['content', 'creator', 'video', 'image', 'media', 'design', 'story'],
   '제작': ['create', 'creator', 'builder', 'production', 'generate', 'api', 'workflow'],
@@ -57,7 +59,7 @@ function parseIntent(message: string): QueryIntent {
     .replace(/[^a-z0-9가-힣\s]/gi, ' ')
     .split(/\s+/)
     .map((term) => normalizeQueryTerm(term.trim()))
-    .filter((term) => term.length >= 2 && !QUERY_STOP_WORDS.has(term));
+    .filter((term) => (term.length >= 2 || Object.prototype.hasOwnProperty.call(SEMANTIC_QUERY_HINTS, term)) && !QUERY_STOP_WORDS.has(term));
   let period: QueryIntent['period'] = null;
   const todayStart = koreanDayStart(0);
   if (/어제|yesterday/i.test(normalized)) period = { start: koreanDayStart(-1), end: todayStart, label: '어제' };
@@ -88,8 +90,8 @@ function isPersonalHistoryQuestion(message: string) {
   return /(내\s*(가|의|기록)?|내가|기록|방문|열어|봤|본\s*것|살펴|탐색|반복|자주|활발|관심사|관심|연결)/.test(message.toLocaleLowerCase('ko-KR'));
 }
 
-function hasSufficientPrivateEvidence(message: string, intent: QueryIntent, visits: ScoredVisit[]) {
-  if (visits.length === 0 || !isPersonalHistoryQuestion(message)) return false;
+function hasSufficientPrivateEvidence(message: string, intent: QueryIntent, visits: ScoredVisit[], requireHistoryCue: boolean) {
+  if (visits.length === 0 || (requireHistoryCue && !isPersonalHistoryQuestion(message))) return false;
   if (intent.mode === 'recurring_topics' || intent.mode === 'connections' || intent.mode === 'peak_activity') return true;
   if (intent.terms.length === 0) return false;
   return visits.some(({ visit }) => {
@@ -271,7 +273,7 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
     Promise.resolve(rankVisits(visits, intent, intent.mode === 'peak_activity' ? 250 : 8)),
     Promise.resolve(rankCandidates(candidates, intent, [])),
   ]);
-  const usePrivateEvidence = hasSufficientPrivateEvidence(message, intent, retrieved);
+  const usePrivateEvidence = hasSufficientPrivateEvidence(message, intent, retrieved, webSearchEnabled);
   const evidenceVisits = usePrivateEvidence ? retrieved : [];
   trace.push({ agent: '기억 탐색자', status: usePrivateEvidence ? 'completed' : 'fallback', summary: usePrivateEvidence ? `${evidenceVisits.length}개의 방문 흔적을 시간·키워드·재방문 신호로 선별했습니다.` : (retrieved.length > 0 ? '제목의 일부 단어만 겹치는 방문 기록은 질문 근거로 사용하지 않았습니다.' : '질문과 직접 맞는 방문 흔적을 찾지 못했습니다.') });
   trace.push({ agent: '시간 해석자', status: 'completed', summary: intent.period ? `${intent.period.label}의 KST 날짜 경계를 적용했습니다.` : '기간 제한 없이 최근성과 반복 신호를 함께 고려했습니다.' });

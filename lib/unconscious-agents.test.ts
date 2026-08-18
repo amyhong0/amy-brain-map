@@ -250,3 +250,27 @@ describe('visit-backed map highlighting', () => {
     expect(result.highlightedVisitIds).toEqual(['visit-ai-1']);
   });
 });
+
+
+describe('cross-language topic retrieval', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = '';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('matches a Korean brain query to English Brain visit evidence when web search is off', async () => {
+    const brainVisit = visit({
+      id: 'visit-brain-map',
+      normalizedUrl: 'https://example.com/brain-map',
+      url: 'https://example.com/brain-map',
+      title: 'Brain Map research notes',
+      domain: 'example.com',
+    });
+
+    const result = await runUnconsciousQuery('뇌 관련 내용 알려줘', [brainVisit], [], false);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.matchedVisits[0].id).toBe('visit-brain-map');
+    expect(result.answer).toContain('Brain Map research notes');
+  });
+});

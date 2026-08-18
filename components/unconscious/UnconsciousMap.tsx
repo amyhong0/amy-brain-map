@@ -165,11 +165,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     }
 
     const graphNodes = [...grouped.values()]
-      .sort((left, right) => {
-        const leftFocused = left.candidates.some((candidate) => highlighted.has(candidate.id) || candidate.id === selectedId) ? 1 : 0;
-        const rightFocused = right.candidates.some((candidate) => highlighted.has(candidate.id) || candidate.id === selectedId) ? 1 : 0;
-        return rightFocused - leftFocused || right.confidence - left.confidence || right.count - left.count;
-      })
+      .sort((left, right) => right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR'))
       .slice(0, 18);
     const nodeIds = new Set(graphNodes.map((node) => node.id));
     const edgesByPair = new Map<string, MapEdge>();
@@ -211,7 +207,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     }
 
     return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 28) };
-  }, [candidates, view, highlightedIds, selectedId]);
+  }, [candidates, view]);
 
   const width = 920;
   const height = 535;
@@ -318,7 +314,6 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     {isHighlighted && <circle cx={point.x} cy={point.y} r={radius + 17} fill="none" stroke="#6ee7ff" strokeOpacity=".72" strokeWidth="1.5" strokeDasharray="3 5" />}
                     <circle cx={point.x} cy={point.y} r={radius + 12 + sway.strength * 5} fill={color} opacity={isFocused ? .3 : .07} filter="url(#nodeGlow)" />
                     <circle cx={point.x} cy={point.y} r={radius} fill={isHighlighted ? '#102c42' : '#111319'} stroke={color} strokeWidth={isFocused ? 3.6 : 1.7} />
-                    <circle cx={point.x - radius * .3} cy={point.y - radius * .3} r={Math.max(3, radius * .15)} fill={color} opacity=".95" />
                     <text x={point.x} y={point.y + 4} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="700" pointerEvents="none">{label}</text>
                     <text x={point.x} y={point.y + radius + 17} textAnchor="middle" fill={isHighlighted ? '#9ff3ff' : '#a9b0bf'} fontSize="9" fontWeight="600" pointerEvents="none">{isHighlighted ? '질문 관련' : degree > 0 ? `연결 ${degree}개` : '단서 수집 중'}</text>
                   </g>

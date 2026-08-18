@@ -205,3 +205,43 @@ button:not(:disabled) { cursor: pointer; }
 .aether-dashboard input::placeholder,
 .aether-dashboard textarea::placeholder { color: #778198 !important; opacity: 1; }
 .aether-dashboard .focus\:bg-white:focus { background-color: var(--aether-surface-raised) !important; }
+
+/* Aether chat composer: the input stays a dark elevated surface, while the send action uses the prescribed white primary control. */
+.aether-chat-composer {
+  border-color: rgba(255, 255, 255, .14) !important;
+  background: linear-gradient(180deg, rgba(12, 13, 17, .96), rgba(5, 5, 6, .99)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+.aether-chat-input {
+  border-color: rgba(255, 255, 255, .16) !important;
+  background: #101114 !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+.aether-chat-input::placeholder { color: #778198 !important; }
+.aether-chat-input:focus {
+  border-color: #4b67a0 !important;
+  background: #15171c !important;
+  box-shadow: 0 0 0 3px rgba(75, 103, 160, .24), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+.aether-chat-search-label { color: #a9b0bf !important; }
+.aether-chat-toggle {
+  background: #1b1e25;
+  border: 1px solid rgba(255, 255, 255, .18);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.aether-chat-toggle-on { background: #4b67a0; border-color: #9db5ff; }
+.aether-chat-toggle-thumb {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .48);
+  transition: transform 150ms ease;
+}
+.aether-chat-send {
+  border: 0;
+  background: #ffffff !important;
+  color: #050506 !important;
+  box-shadow: 0 1px 2px rgba(255, 255, 255, .08);
+}
+.aether-chat-send:hover:not(:disabled) { background: #dbe4ff !important; }
+.aether-chat-send * { color: #050506 !important; }

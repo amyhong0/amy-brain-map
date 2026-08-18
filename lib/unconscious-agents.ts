@@ -90,6 +90,46 @@ function rankCandidates(candidates: DiscoveryCandidate[], intent: QueryIntent, m
     .slice(0, 8);
 }
 
+interface TopicSummary {
+  label: string;
+  pages: BrowserVisit[];
+  score: number;
+}
+
+function readableVisitLabel(visit: BrowserVisit) {
+  const title = visit.title.replace(/\s+/g, ' ').trim();
+  if (title && title.length >= 3 && title.length <= 72) return title;
+  return visit.domain.replace(/^www\./, '');
+}
+
+function buildTopicSummaries(visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>) {
+  const visitById = new Map(visits.map(({ visit }) => [visit.id, visit]));
+  const groups = new Map<string, { anchor: BrowserVisit; pages: Map<string, BrowserVisit>; score: number }>();
+
+  for (const { candidate, score } of candidates) {
+    const relatedPages = candidate.sourceVisitIds.map((id) => visitById.get(id)).filter((visit): visit is BrowserVisit => Boolean(visit));
+    if (relatedPages.length === 0) continue;
+    const anchor = [...relatedPages].sort((left, right) => right.visitCount - left.visitCount || right.lastVisitTime - left.lastVisitTime)[0];
+    const existing = groups.get(anchor.normalizedUrl) || { anchor, pages: new Map<string, BrowserVisit>(), score: 0 };
+    for (const page of relatedPages) existing.pages.set(page.normalizedUrl, page);
+    existing.score += score + Math.min(candidate.confidence, 1);
+    groups.set(anchor.normalizedUrl, existing);
+  }
+
+  if (groups.size === 0) {
+    for (const { visit, score } of visits.slice(0, 3)) groups.set(visit.normalizedUrl, { anchor: visit, pages: new Map([[visit.normalizedUrl, visit]]), score });
+  }
+
+  return [...groups.values()]
+    .map(({ anchor, pages, score }) => ({
+      label: readableVisitLabel(anchor),
+      pages: [...pages.values()].sort((left, right) => right.visitCount - left.visitCount || right.lastVisitTime - left.lastVisitTime).slice(0, 2),
+      score,
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3) satisfies TopicSummary[];
+}
+
 function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[]) {
   if (visits.length === 0 && webSources.length > 0) {
     const sourceNames = webSources.slice(0, 3).map((source) => source.title).join(', ');
@@ -105,9 +145,12 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
   const visitText = visits.slice(0, 4).map(({ visit }) => `**${visit.title || visit.domain}** (${visit.domain}, ${visit.visitCount}회)`).join(', ');
   const connection = candidates[0]?.candidate;
   if (intent.mode === 'recurring_topics') {
-    const topics = [...new Set(candidates.map(({ candidate }) => candidate.subject))].slice(0, 3);
-    const topicText = topics.length ? ` 반복 관심으로는 ${topics.map((topic) => `**${topic}**`).join(', ')}이(가) 함께 나타납니다.` : '';
-    return `${periodText}기록에서 반복해서 살펴본 페이지는 ${visitText}입니다.${topicText} 방문 횟수와 최근성을 함께 반영해 지도에 강조했습니다.`;
+    const topics = buildTopicSummaries(visits, candidates);
+    const topicLines = topics.map((topic, index) => {
+      const pages = topic.pages.map((page) => `${readableVisitLabel(page)} (${page.domain})`).join(' · ');
+      return `${index + 1}. ${topic.label}\n   관련 페이지: ${pages}`;
+    });
+    return `${periodText}기록에서 반복적으로 나타난 관심은 다음과 같습니다.\n\n${topicLines.join('\n\n')}\n\n단어 조각이 아니라 공통 근거 페이지를 기준으로 묶었으며, 관련 지도 노드를 강조했습니다.`;
   }
   if (intent.mode === 'connections') {
     return `${periodText}기록에서 함께 이어진 흔적으로 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과 맞닿아 있습니다.` : ' 아직 충분한 공통 근거가 없어 관련 페이지를 중심으로 표시했습니다.'}`;
@@ -116,7 +159,7 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
 }
 
 async function composeWithModel(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[]) {
-  if (!process.env.NVIDIA_API_KEY || (visits.length === 0 && webSources.length === 0)) return null;
+  if (intent.mode === 'recurring_topics' || !process.env.NVIDIA_API_KEY || (visits.length === 0 && webSources.length === 0)) return null;
   const context = {
     period: intent.period?.label || '전체 기간',
     queryTerms: intent.terms,
@@ -133,7 +176,7 @@ async function composeWithModel(message: string, intent: QueryIntent, visits: Sc
       temperature: 0.2,
       max_tokens: 500,
       messages: [
-        { role: 'system', content: '당신은 개인의 방문 기록과, 사용자가 명시적으로 켠 웹 검색 결과를 구분해 설명하는 AI입니다. 제공된 컨텍스트만 근거로 한국어로 간결하게 답하세요. queryMode가 recurring_topics이면 키워드 일치 여부를 답하지 말고, 해당 기간에 방문 횟수와 최근성을 기준으로 반복해 본 페이지와 관심 주제를 직접 요약하세요. queryMode가 connections이면 함께 나타난 페이지와 확인된 관계 가설을 설명하세요. 방문 기록이 없고 웹 출처만 있다면 반드시 “웹 검색으로 보강한 답변”이라고 밝히고 출처 제목을 제시하세요. 추측을 사실처럼 말하지 말고, 관계 가설에는 “가설”이라고 명시하세요.' },
+        { role: 'system', content: '당신은 개인의 방문 기록과, 사용자가 명시적으로 켠 웹 검색 결과를 구분해 설명하는 AI입니다. 제공된 컨텍스트만 근거로 한국어로 간결하게 답하세요. 페이지 제목에서 쪼개진 단어를 독립 주제로 나열하지 말고, 사용자가 실제로 열어본 페이지와 도메인을 중심으로 자연스러운 주제 묶음을 설명하세요. queryMode가 connections이면 함께 나타난 페이지와 확인된 관계 가설을 설명하세요. 방문 기록이 없고 웹 출처만 있다면 반드시 “웹 검색으로 보강한 답변”이라고 밝히고 출처 제목을 제시하세요. 추측을 사실처럼 말하지 말고, 관계 가설에는 “가설”이라고 명시하세요.' },
         { role: 'user', content: `질문: ${message}\n\n검증된 컨텍스트:\n${JSON.stringify(context)}` },
       ],
     }),

@@ -57,9 +57,21 @@ window.addEventListener('message', async (event) => {
   if (event.source !== window || event.origin !== window.location.origin) return;
   const message = event.data;
   if (!message || message.source !== REQUEST_SOURCE) return;
-  if (message.type !== 'initial-history-sync' && message.type !== 'auto-connect-and-initial-history-sync') return;
 
   try {
+    if (message.type === 'auto-sync-status') {
+      const state = await chrome.runtime.sendMessage({ type: 'get-state' });
+      postToDashboard({ type: 'auto-sync-status-result', requestId: message.requestId, result: state.autoSync || null });
+      return;
+    }
+    if (message.type === 'set-auto-sync-interval') {
+      const result = await chrome.runtime.sendMessage({ type: 'set-auto-sync-interval', intervalMinutes: message.intervalMinutes });
+      if (result?.error) throw new Error(result.error);
+      postToDashboard({ type: 'set-auto-sync-interval-result', requestId: message.requestId, result: result.autoSync || null });
+      return;
+    }
+    if (message.type !== 'initial-history-sync' && message.type !== 'auto-connect-and-initial-history-sync') return;
+
     const requestedAt = Date.now();
     const extensionMessage = message.type === 'auto-connect-and-initial-history-sync'
       ? { type: 'auto-connect-and-initial-sync', endpoint: window.location.origin, connectCode: message.connectCode, days: 3650 }
@@ -69,10 +81,15 @@ window.addEventListener('message', async (event) => {
     postToDashboard({ type: 'initial-history-sync-started', requestId: message.requestId });
     await trackInitialSync(message.requestId, requestedAt);
   } catch (error) {
+    const messageText = error instanceof Error ? error.message : 'Chrome 방문 기록 동기화에 실패했습니다.';
+    if (message.type === 'auto-sync-status' || message.type === 'set-auto-sync-interval') {
+      postToDashboard({ type: `${message.type}-result`, requestId: message.requestId, error: messageText });
+      return;
+    }
     postToDashboard({
       type: 'initial-history-sync-result',
       requestId: message.requestId,
-      result: { error: error instanceof Error ? error.message : 'Chrome 방문 기록 동기화에 실패했습니다.' },
+      result: { error: messageText },
     });
   }
 });

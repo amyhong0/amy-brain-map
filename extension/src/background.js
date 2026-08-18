@@ -5,6 +5,8 @@ const SYNC_ALARM = 'brain-office-history-sync';
 const MAX_BATCH_SIZE = 500;
 const MAX_QUEUE_SIZE = 5_000;
 const INCREMENTAL_SYNC_OVERLAP_MS = 2 * 60 * 1_000;
+const DEFAULT_AUTO_SYNC_INTERVAL_MINUTES = 30;
+const AUTO_SYNC_INTERVAL_OPTIONS = [15, 30, 60, 180, 360];
 const DASHBOARD_MATCHES = ['https://amy-brain-map.vercel.app/*', 'http://localhost/*'];
 
 const EMPTY_SETTINGS = {
@@ -12,6 +14,7 @@ const EMPTY_SETTINGS = {
   installationToken: '',
   installationId: '',
   enabled: false,
+  autoSyncIntervalMinutes: DEFAULT_AUTO_SYNC_INTERVAL_MINUTES,
 };
 
 async function getSettings() {
@@ -49,6 +52,28 @@ function historyItem(item) {
     lastVisitTime,
     visitCount: Math.max(1, Math.floor(Number(item.visitCount || 1))),
   };
+}
+
+function autoSyncInterval(value) {
+  const requested = Number(value);
+  return AUTO_SYNC_INTERVAL_OPTIONS.includes(requested) ? requested : DEFAULT_AUTO_SYNC_INTERVAL_MINUTES;
+}
+
+async function ensureSyncAlarm(settings) {
+  if (!settings.enabled) {
+    await chrome.alarms.clear(SYNC_ALARM);
+    return null;
+  }
+
+  const intervalMinutes = autoSyncInterval(settings.autoSyncIntervalMinutes);
+  const existing = await chrome.alarms.get(SYNC_ALARM);
+  if (!existing || Number(existing.periodInMinutes) !== intervalMinutes) {
+    await chrome.alarms.create(SYNC_ALARM, {
+      periodInMinutes: intervalMinutes,
+      persistAcrossSessions: true,
+    });
+  }
+  return chrome.alarms.get(SYNC_ALARM);
 }
 
 function itemKey(item) {
@@ -131,6 +156,7 @@ async function connectFromDashboard(endpoint, connectCode) {
     },
   });
   await registerDashboardBridge();
+  await ensureSyncAlarm({ ...current, endpoint: normalizedEndpoint, installationId, installationToken, enabled: true });
   await setState({ status: 'ready', lastError: '' });
   return { installationId };
 }
@@ -246,15 +272,17 @@ async function syncHistorySinceLastSync() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
   await registerDashboardBridge();
   const settings = await getSettings();
+  await ensureSyncAlarm(settings);
   await setState({ status: settings.enabled ? 'ready' : 'paused' });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
   await registerDashboardBridge();
+  const settings = await getSettings();
+  await ensureSyncAlarm(settings);
+  await syncHistorySinceLastSync();
   await syncPending();
 });
 
@@ -263,7 +291,10 @@ chrome.history.onVisited.addListener(async (item) => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === SYNC_ALARM) await syncPending();
+  if (alarm.name === SYNC_ALARM) {
+    await syncHistorySinceLastSync();
+    await syncPending();
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -271,7 +302,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'get-state') {
       const state = await chrome.storage.local.get(STATE_KEY);
       const settings = await getSettings();
-      sendResponse({ ...(state[STATE_KEY] || {}), configured: Boolean(settings.endpoint && settings.installationToken), enabled: settings.enabled });
+      const alarm = await ensureSyncAlarm(settings);
+      sendResponse({
+        ...(state[STATE_KEY] || {}),
+        configured: Boolean(settings.endpoint && settings.installationToken),
+        enabled: settings.enabled,
+        autoSync: {
+          active: Boolean(settings.enabled && alarm),
+          intervalMinutes: autoSyncInterval(settings.autoSyncIntervalMinutes),
+          nextRunAt: alarm?.scheduledTime || null,
+        },
+      });
       return;
     }
     if (message.type === 'auto-connect-and-initial-sync') {
@@ -295,9 +336,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse(await syncPending());
       return;
     }
+    if (message.type === 'set-auto-sync-interval') {
+      const settings = await getSettings();
+      const intervalMinutes = Number(message.intervalMinutes);
+      if (!AUTO_SYNC_INTERVAL_OPTIONS.includes(intervalMinutes)) throw new Error('지원하지 않는 자동 수집 간격입니다.');
+      const nextSettings = { ...settings, autoSyncIntervalMinutes: intervalMinutes };
+      await chrome.storage.local.set({ [SETTINGS_KEY]: nextSettings });
+      const alarm = await ensureSyncAlarm(nextSettings);
+      await setState({ status: nextSettings.enabled ? 'ready' : 'paused', lastError: '' });
+      sendResponse({ success: true, autoSync: { active: Boolean(nextSettings.enabled && alarm), intervalMinutes, nextRunAt: alarm?.scheduledTime || null } });
+      return;
+    }
     if (message.type === 'pause') {
       const settings = await getSettings();
-      await chrome.storage.local.set({ [SETTINGS_KEY]: { ...settings, enabled: false } });
+      const nextSettings = { ...settings, enabled: false };
+      await chrome.storage.local.set({ [SETTINGS_KEY]: nextSettings });
+      await ensureSyncAlarm(nextSettings);
       await setState({ status: 'paused' });
       sendResponse({ success: true });
       return;

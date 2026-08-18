@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Bot, BrainCircuit, Check, Copy, ExternalLink,
   ListChecks, LogIn, LogOut, Network, Play, RefreshCw, Search, Send, ShieldCheck, Sparkles, Trash2, UserRound, X,
@@ -20,6 +20,12 @@ interface QueryResult {
   webSearchUsed?: boolean;
   webSearchConfigured?: boolean;
   webSources?: WebSource[];
+}
+
+interface ChatTurn {
+  id: string;
+  question: string;
+  result: QueryResult;
 }
 
 const EXAMPLE_QUESTION = '내가 어제 본 것 중에 AI 콘텐츠 제작 관련된 게 뭐더라?';
@@ -42,6 +48,11 @@ function formatDate(value?: number | string) {
 }
 
 function requestHeaders() { return { 'Content-Type': 'application/json' }; }
+
+function followUpSuggestions(result: QueryResult) {
+  const focus = result.matchedCandidates[0]?.subject || result.matchedVisits[0]?.title || '이 관심의 흐름';
+  return [`“${focus}”와 연결된 다른 관심은 뭐야?`, '이 관심이 가장 활발했던 시점은 언제야?', '다음으로 검토하면 좋은 연결은 무엇이야?'];
+}
 
 function visitorFacingError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
@@ -103,6 +114,8 @@ export default function Home() {
   const [question, setQuestion] = useState('');
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<DiscoveryCandidate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -179,6 +192,11 @@ export default function Home() {
     return () => { active = false; };
   }, [loadData]);
 
+  useEffect(() => {
+    const log = chatLogRef.current;
+    if (log) log.scrollTo({ top: log.scrollHeight, behavior: 'smooth' });
+  }, [chatTurns, isLoading]);
+
   const startGoogleLogin = () => { window.location.assign('/api/auth/login'); };
 
   const logout = async () => {
@@ -189,6 +207,7 @@ export default function Home() {
     setCandidates([]);
     setRuns([]);
     setQueryResult(null);
+    setChatTurns([]);
     setSelectedCandidate(null);
   };
 
@@ -291,16 +310,19 @@ export default function Home() {
   const ask = async (event?: FormEvent) => {
     event?.preventDefault();
     const message = question.trim();
-    if (!message || !user) return;
+    if (!message || !user || isLoading) return;
     setIsLoading(true);
     setError('');
+    setQuestion('');
     try {
       const response = await fetch('/api/unconscious/query', { method: 'POST', headers: requestHeaders(), body: JSON.stringify({ message, webSearch: webSearchEnabled }) });
-      const data = await response.json();
+      const data = await response.json() as QueryResult & { error?: string };
       if (!response.ok) throw new Error(data.error || '질문을 처리하지 못했습니다.');
       setQueryResult(data);
+      setChatTurns((current) => [...current, { id: window.crypto?.randomUUID?.() || `${Date.now()}-${message}`, question: message, result: data }]);
       if (data.matchedCandidates?.[0]) setSelectedCandidate(data.matchedCandidates[0]);
     } catch (queryError) {
+      setQuestion(message);
       setError(visitorFacingError(queryError, '질문 중 오류가 발생했습니다.'));
     } finally {
       setIsLoading(false);
@@ -424,12 +446,6 @@ export default function Home() {
   const visibleVisits = queryResult?.matchedVisits || visits;
   const pendingCandidates = useMemo(() => candidates.filter((candidate) => candidate.status === 'pending'), [candidates]);
   const blockedPolicies = useMemo(() => (privacy?.policies || []).filter((policy) => policy.mode === 'block'), [privacy]);
-  const followUpQuestions = useMemo(() => {
-    const focus = queryResult?.matchedCandidates[0]?.subject || queryResult?.matchedVisits[0]?.title || '이 관심의 흐름';
-    return queryResult
-      ? [`“${focus}”와 연결된 다른 관심은 뭐야?`, '이 관심이 가장 활발했던 시점은 언제야?', '다음으로 검토하면 좋은 연결은 무엇이야?']
-      : STARTER_QUESTIONS;
-  }, [queryResult]);
   const needsConnection = user && visits.length === 0;
 
   return (
@@ -463,8 +479,28 @@ export default function Home() {
 
           <div className="order-1 min-w-0 space-y-5 xl:contents xl:space-y-0"><section className="aether-hero xl:col-span-3 xl:row-start-1 relative isolate overflow-hidden rounded-3xl border p-6 text-white md:p-8"><div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full border border-white/15" /><div aria-hidden="true" className="pointer-events-none absolute -bottom-36 left-[18%] h-64 w-64 rounded-full bg-violet-500/[.14] blur-3xl" /><div className="relative flex flex-col gap-6"><div className="max-w-none"><p className="text-xs font-extrabold tracking-[0.24em] text-blue-200">THOUGHTS, MADE VISIBLE</p><h2 className="display-serif break-keep mt-4 text-[30px] font-medium leading-[1.32] tracking-[0.012em] sm:text-[42px] sm:leading-[1.24] sm:tracking-[0.014em] lg:text-[50px] lg:leading-[1.18] lg:tracking-[0.018em]"><span className="block lg:whitespace-nowrap">스쳐 지나간 웹페이지 속에서,</span><span className="block lg:whitespace-nowrap">내 사고의 흐름을 발견하세요.</span></h2><p className="mt-5 max-w-none text-sm leading-7 text-slate-300 md:text-[15px]">무심코 열어본 페이지들을 모아 어떤 주제를 반복해 살펴봤는지 분석하고, 서로 이어지는 관심의 흐름을 한눈에 보여 줍니다.</p></div><div className="flex shrink-0 flex-col gap-2 lg:self-end lg:items-end"><button type="button" disabled={!user || isHistorySyncing || isAnalyzing} onClick={requestHistoryFromChrome} className="aether-action-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-55">{isHistorySyncing || isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isHistorySyncing ? 'Chrome 기록을 읽는 중…' : isAnalyzing ? '패턴을 분석하는 중…' : 'Chrome 기록 가져오기'}</button><div className="max-w-[260px] lg:text-right"><p aria-live="polite" className="text-[11px] leading-5 text-slate-300">{historySyncMessage || (user ? 'Chrome에 현재 남아 있는 방문 기록을 읽어와 지도에 반영합니다.' : 'Google 로그인 뒤 본인의 Chrome 프로필을 연결하세요.')}</p>{isHistorySyncing && historySyncProgress !== null && <div className="mt-2 flex items-center gap-2 lg:justify-end"><div role="progressbar" aria-label="Chrome 기록 동기화 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={historySyncProgress} className="h-1.5 w-36 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-blue-300 transition-[width] duration-300" style={{ width: `${historySyncProgress}%` }} /></div><span className="min-w-8 text-right text-[11px] font-bold text-blue-200">{historySyncProgress}%</span></div>}</div></div></div></section><div className="xl:col-start-2 xl:row-start-2"><UnconsciousMap candidates={candidates} selectedId={selectedCandidate?.id} highlightedIds={highlightedIds} onSelect={setSelectedCandidate} /></div></div>
 
-          <aside className="order-3 space-y-5 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-24"><section className="brain-card overflow-hidden rounded-3xl"><div className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-violet-50 p-5"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white"><Sparkles className="h-4 w-4" /></div><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-600">Ask your map</p><h2 className="text-base font-bold text-slate-950">기억 탐색</h2></div></div><StatusPill tone="slate">A2A</StatusPill></div><p className="mt-3 text-xs leading-5 text-slate-600">질문하면 탐색·시간·관계 검증 에이전트가 근거를 고르고, 지도 위 연결을 실시간으로 밝힙니다.</p></div><div className="p-4"><form onSubmit={ask} className="space-y-3"><label className="sr-only" htmlFor="map-question">브레인 맵에 질문하기</label><textarea id="map-question" value={question} onChange={(event) => setQuestion(event.target.value)} disabled={!user || isLoading} rows={4} placeholder={EXAMPLE_QUESTION} className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed" /><div className="flex items-center justify-between gap-2"><label className="inline-flex min-h-11 cursor-pointer items-center gap-2.5 text-xs font-bold text-slate-700"><span>웹 검색</span><span className={`relative h-7 w-12 rounded-full transition ${webSearchEnabled ? 'bg-blue-600' : 'bg-slate-200'} ${!user || isLoading ? 'opacity-50' : ''}`}><input checked={webSearchEnabled} onChange={(event) => setWebSearchEnabled(event.target.checked)} disabled={!user || isLoading} type="checkbox" role="switch" aria-label="웹 검색" className="peer sr-only" /><span aria-hidden="true" className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-focus-visible:ring-4 peer-focus-visible:ring-blue-200 ${webSearchEnabled ? 'translate-x-6' : 'translate-x-1'}`} /></span></label><button disabled={!user || isLoading || !question.trim()} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-3.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{isLoading ? '탐색 중' : '지도에서 찾기'}</button></div></form><div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-extrabold tracking-[0.12em] text-slate-700">시작 질문</p><p className="mt-1 text-xs leading-5 text-slate-500">궁금한 흐름을 골라 입력창에 채워 보세요.</p><div className="mt-3 flex flex-wrap gap-2">{STARTER_QUESTIONS.map((starter) => <button type="button" key={starter} onClick={() => setQuestion(starter)} className="min-h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-[11px] font-semibold leading-4 text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800">{starter}</button>)}</div></div></div></section>
-          <section aria-live="polite" className="brain-card rounded-3xl p-4">{queryResult ? <><div className="flex items-center gap-2"><Bot className="h-4 w-4 text-violet-600" /><p className="text-xs font-extrabold uppercase tracking-[0.15em] text-violet-700">Map response</p>{queryResult.webSearchUsed && <StatusPill tone="violet">웹 검색</StatusPill>}</div><p className="mt-3 whitespace-pre-line text-sm font-medium leading-6 text-slate-800">{queryResult.answer}</p><div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-extrabold tracking-[0.12em] text-violet-700">이어서 살펴보기</p><div className="mt-3 flex flex-wrap gap-2">{followUpQuestions.map((followUp) => <button type="button" key={followUp} onClick={() => setQuestion(followUp)} className="min-h-10 rounded-xl border border-violet-100 bg-violet-50 px-3 text-left text-[11px] font-semibold leading-4 text-violet-800 transition hover:border-violet-200 hover:bg-violet-100">{followUp}</button>)}</div></div><div className="mt-4 space-y-2 border-t border-slate-100 pt-3">{queryResult.trace.map((item) => <div className="flex gap-2 text-[11px]" key={item.agent}><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'completed' ? 'bg-emerald-500' : 'bg-amber-500'}`} /><div><span className="font-bold text-slate-700">{item.agent}</span><p className="mt-0.5 leading-4 text-slate-500">{item.summary}</p></div></div>)}</div>{queryResult.webSearchUsed && <div className="mt-4 border-t border-slate-100 pt-3"><p className="text-[11px] font-bold text-blue-700">웹 검색 출처</p><div className="mt-2 space-y-2">{(queryResult.webSources || []).map((source) => <a href={source.url} target="_blank" rel="noreferrer" className="brain-card-interactive block rounded-xl border border-slate-100 bg-slate-50 p-2.5" key={source.url}><div className="flex items-center gap-1"><p className="truncate text-[11px] font-bold text-slate-800">{source.title}</p><ExternalLink className="ml-auto h-3 w-3 shrink-0 text-blue-500" /></div><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{source.snippet}</p></a>)}</div></div>}{webSearchEnabled && !queryResult.webSearchConfigured && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">웹 검색에는 서버의 TAVILY_API_KEY가 필요합니다. 개인 방문 이력은 외부 검색으로 전송되지 않습니다.</p>}</> : <div className="py-5 text-center"><div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-violet-50 text-violet-600"><Search className="h-5 w-5" /></div><p className="mt-3 text-sm font-bold text-slate-800">무엇부터 살펴볼까요?</p><p className="mx-auto mt-1 max-w-[280px] text-xs leading-5 text-slate-500">위의 시작 질문을 고르거나, 떠오르는 질문을 직접 남겨 보세요.</p></div>}</section></aside>
+          <aside className="order-3 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-24">
+            <section className="brain-card flex min-h-[640px] flex-col overflow-hidden rounded-3xl">
+              <div className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-violet-50 px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5"><div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white"><Sparkles className="h-4 w-4" /></div><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-600">Ask your map</p><h2 className="text-base font-bold text-slate-950">기억 탐색</h2></div></div>
+                  <StatusPill tone="slate">A2A</StatusPill>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-600">열어본 페이지 기록을 바탕으로 관심의 흐름을 함께 살펴봅니다.</p>
+              </div>
+
+              <div ref={chatLogRef} role="log" aria-live="polite" aria-label="기억 탐색 대화" className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-5">
+                {chatTurns.length === 0 ? <div className="flex gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><Bot className="h-4 w-4" /></div><div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-3"><p className="text-sm font-semibold leading-6 text-slate-800">무엇이 궁금하신가요?</p><p className="mt-1 text-xs leading-5 text-slate-500">시작 질문을 고르거나, 열어본 페이지에 대해 직접 물어보세요.</p><div className="mt-3 flex flex-wrap gap-2">{STARTER_QUESTIONS.map((starter) => <button type="button" key={starter} onClick={() => setQuestion(starter)} className="min-h-10 rounded-xl border border-violet-100 bg-white px-3 text-left text-[11px] font-semibold leading-4 text-violet-800 transition hover:border-violet-200 hover:bg-violet-50">{starter}</button>)}</div></div></div> : chatTurns.map((turn) => <React.Fragment key={turn.id}><div className="flex justify-end"><div className="max-w-[86%] rounded-2xl rounded-tr-sm bg-blue-600 px-3.5 py-3 text-sm font-medium leading-6 text-white">{turn.question}</div></div><div className="flex gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><Bot className="h-4 w-4" /></div><div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-3"><p className="whitespace-pre-line text-sm font-medium leading-6 text-slate-800">{turn.result.answer}</p>{turn.result.webSearchUsed && <StatusPill tone="violet">웹 검색 보강</StatusPill>}{turn.result.webSources?.length ? <div className="mt-3 border-t border-slate-200 pt-3"><p className="text-[11px] font-bold text-blue-700">웹 검색 출처</p><div className="mt-2 space-y-2">{turn.result.webSources.slice(0, 3).map((source) => <a href={source.url} target="_blank" rel="noreferrer" className="brain-card-interactive block rounded-xl border border-slate-100 bg-white p-2.5" key={source.url}><div className="flex items-center gap-1"><p className="truncate text-[11px] font-bold text-slate-800">{source.title}</p><ExternalLink className="ml-auto h-3 w-3 shrink-0 text-blue-500" /></div><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{source.snippet}</p></a>)}</div></div> : null}<div className="mt-3 border-t border-slate-200 pt-3"><p className="text-[11px] font-bold text-violet-700">이어서 물어보기</p><div className="mt-2 flex flex-wrap gap-2">{followUpSuggestions(turn.result).map((followUp) => <button type="button" key={followUp} onClick={() => setQuestion(followUp)} className="min-h-10 rounded-xl border border-violet-100 bg-white px-3 text-left text-[11px] font-semibold leading-4 text-violet-800 transition hover:border-violet-200 hover:bg-violet-50">{followUp}</button>)}</div></div></div></div></React.Fragment>)}
+                {isLoading && <div className="flex gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><Bot className="h-4 w-4" /></div><div className="rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-3 text-xs font-semibold text-slate-500"><RefreshCw className="mr-2 inline h-3.5 w-3.5 animate-spin" />기록에서 답을 찾는 중입니다.</div></div>}
+              </div>
+
+              <form onSubmit={ask} className="border-t border-slate-100 bg-white/60 p-4">
+                <label className="sr-only" htmlFor="map-question">브레인 맵에 질문하기</label>
+                <textarea id="map-question" value={question} onChange={(event) => setQuestion(event.target.value)} disabled={!user || isLoading} rows={3} placeholder={EXAMPLE_QUESTION} className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed" />
+                <div className="mt-3 flex items-center justify-between gap-2"><label className="inline-flex min-h-11 cursor-pointer items-center gap-2.5 text-xs font-bold text-slate-700"><span>웹 검색</span><span className={`relative h-7 w-12 rounded-full transition ${webSearchEnabled ? 'bg-blue-600' : 'bg-slate-200'} ${!user || isLoading ? 'opacity-50' : ''}`}><input checked={webSearchEnabled} onChange={(event) => setWebSearchEnabled(event.target.checked)} disabled={!user || isLoading} type="checkbox" role="switch" aria-label="웹 검색" className="peer sr-only" /><span aria-hidden="true" className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-focus-visible:ring-4 peer-focus-visible:ring-blue-200 ${webSearchEnabled ? 'translate-x-6' : 'translate-x-1'}`} /></span></label><button disabled={!user || isLoading || !question.trim()} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-3.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{isLoading ? '찾는 중' : '보내기'}</button></div>
+              </form>
+            </section>
+          </aside>
         </section>
 
         <section className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,.58fr)_minmax(0,1.42fr)]">

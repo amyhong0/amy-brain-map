@@ -14,7 +14,7 @@ export function candidateReviewCopy(candidate: DiscoveryCandidate): CandidateRev
 
   if (candidate.kind === 'interest') {
     return {
-      category: '반복 관심 제안',
+      category: '반복 관심 검토',
       title: `“${subject}” 관련 탐색이 ${object}에서 반복된 것으로 감지되었습니다.`,
       question: `“${subject}”을(를) 내 지도에 반복 관심으로 남길까요?`,
       mapEffect: `지도에서 “${subject}” 관심 노드가 확인된 패턴으로 확정됩니다. “${object}”는 이 노드를 뒷받침하는 탐색 도메인이며, 새 연결선은 추가되지 않습니다.`,
@@ -23,7 +23,7 @@ export function candidateReviewCopy(candidate: DiscoveryCandidate): CandidateRev
 
   if (candidate.kind === 'bridge') {
     return {
-      category: '탐색 흐름 연결 제안',
+      category: '탐색 흐름 연결 검토',
       title: `“${subject}”와 “${object}”가 가까운 시간대의 같은 탐색 흐름에서 함께 나타났습니다.`,
       question: '두 주제를 내 지도에서 하나의 연결로 남길까요?',
       mapEffect: `지도에서 “${subject}” 노드와 “${object}” 노드 사이에 같은 탐색 흐름을 뜻하는 연결선이 확정됩니다.`,
@@ -31,7 +31,7 @@ export function candidateReviewCopy(candidate: DiscoveryCandidate): CandidateRev
   }
 
   return {
-    category: '재방문 패턴 제안',
+    category: '재방문 패턴 검토',
     title: `“${subject}” 관련 탐색에서 “${object}” 패턴이 감지되었습니다.`,
     question: '이 패턴을 내 지도에 남길까요?',
     mapEffect: `지도에서 “${subject}” 관심 노드가 확인된 재방문 패턴으로 확정됩니다. “${object}”은(는) 이 판단을 뒷받침하는 탐색 맥락입니다.`,

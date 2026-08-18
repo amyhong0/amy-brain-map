@@ -149,10 +149,10 @@ function peakActivityResponse(visits: ScoredVisit[]) {
   return `저장된 페이지별 방문 횟수와 마지막 방문 시각을 기준으로, 가장 활발했던 시점은 **${peak.label}**입니다.\n\n그 시점의 주요 페이지: ${pages}\n\n같은 기간의 다른 날짜와 비교해 가장 강한 재방문 신호가 나타난 시점입니다.`;
 }
 
-function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[]) {
-  if (visits.length === 0 && webSources.length > 0) {
-    const sourceNames = webSources.slice(0, 3).map((source) => source.title).join(', ');
-    return `개인 방문 기록에서는 직접 근거를 찾지 못해 웹 검색으로 보강했습니다. ${sourceNames} 등의 공개 자료를 바탕으로 답변하며, 아래의 웹 출처를 확인해 주세요.`;
+function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webAnswer?: string) {
+  if (visits.length === 0 && (webSources.length > 0 || webAnswer)) {
+    if (webAnswer) return `웹 검색으로 보강한 답변입니다.\n\n${webAnswer}\n\n아래에서 답변에 참고한 출처를 확인할 수 있습니다.`;
+    return '개인 방문 기록에는 직접 근거가 없어 웹 검색으로 보강했습니다. 아래 출처의 내용을 바탕으로 답변을 구성했습니다.';
   }
   if (visits.length === 0) {
     const periodText = intent.period ? `${intent.period.label} ` : '';
@@ -179,14 +179,15 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
   return `${periodText}기록에서 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과도 맞닿아 있습니다.` : ''} 지도에서 관련 관심 축을 강조했습니다.`;
 }
 
-async function composeWithModel(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[]) {
-  if ((intent.mode === 'recurring_topics' || intent.mode === 'peak_activity') || !process.env.NVIDIA_API_KEY || (visits.length === 0 && webSources.length === 0)) return null;
+async function composeWithModel(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webSearchSummary?: string) {
+  if ((intent.mode === 'recurring_topics' || intent.mode === 'peak_activity') || !process.env.NVIDIA_API_KEY || (visits.length === 0 && webSources.length === 0 && !webSearchSummary)) return null;
   const context = {
     period: intent.period?.label || '전체 기간',
     queryTerms: intent.terms,
     queryMode: intent.mode,
     visits: visits.map(({ visit }) => ({ title: visit.title, domain: visit.domain, visitedAt: new Date(visit.lastVisitTime).toISOString(), visitCount: visit.visitCount })),
     connections: candidates.map(({ candidate }) => ({ subject: candidate.subject, relation: candidate.relation, object: candidate.object, confidence: candidate.confidence, evidence: candidate.evidence })),
+    webSearchSummary,
     webSources: webSources.map((source) => ({ title: source.title, url: source.url, snippet: source.snippet })),
   };
   const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
@@ -194,10 +195,10 @@ async function composeWithModel(message: string, intent: QueryIntent, visits: Sc
     headers: { Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'meta/llama-3.1-8b-instruct',
-      temperature: 0.2,
-      max_tokens: 500,
+      temperature: 0.3,
+      max_tokens: 800,
       messages: [
-        { role: 'system', content: '당신은 개인의 방문 기록과, 사용자가 명시적으로 켠 웹 검색 결과를 구분해 설명하는 AI입니다. 제공된 컨텍스트만 근거로 한국어로 간결하게 답하세요. 페이지 제목에서 쪼개진 단어를 독립 주제로 나열하지 말고, 사용자가 실제로 열어본 페이지와 도메인을 중심으로 자연스러운 주제 묶음을 설명하세요. queryMode가 connections이면 함께 나타난 페이지와 확인된 관계 가설을 설명하세요. 방문 기록이 없고 웹 출처만 있다면 반드시 “웹 검색으로 보강한 답변”이라고 밝히고 출처 제목을 제시하세요. 추측을 사실처럼 말하지 말고, 관계 가설에는 “가설”이라고 명시하세요.' },
+        { role: 'system', content: '당신은 개인의 방문 기록과 사용자가 명시적으로 켠 웹 검색 결과를 구분해 설명하는 한국어 대화형 AI입니다. 제공된 컨텍스트만 근거로, 사용자의 질문에 먼저 직접 답하세요. 방문 기록이 없고 웹 출처만 있다면 첫 문장에만 “웹 검색으로 보강한 답변입니다.”라고 밝힌 뒤, 일반적인 대화형 AI처럼 핵심 결론을 1~2문장으로 제시하고 3~5개의 짧은 단락 또는 번호 항목으로 개념·선택 기준·실무 적용을 설명하세요. 검색 결과의 페이지 제목·도메인·목록을 답변 본문에 나열하거나 “정보는 다음과 같습니다”처럼 시작하지 마세요. 출처 링크는 인터페이스가 별도로 보여 주므로, 본문에는 사실을 뒷받침하는 설명만 작성하세요. queryMode가 connections이면 함께 나타난 페이지와 확인된 관계 가설을 설명하세요. 방문 기록 기반 답변에서는 페이지 제목에서 쪼개진 단어를 독립 주제로 나열하지 마세요. 불확실하거나 출처 간 견해가 갈리면 그 한계를 분명히 말하고, 추측을 사실처럼 말하지 마세요.' },
         { role: 'user', content: `질문: ${message}\n\n검증된 컨텍스트:\n${JSON.stringify(context)}` },
       ],
     }),
@@ -223,7 +224,8 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
   const webSearchAttempted = webSearchEnabled && retrieved.length === 0;
   const webSearch = webSearchAttempted ? await searchWebForAnswer(message) : { configured: Boolean(process.env.TAVILY_API_KEY), sources: [] as WebSearchSource[] };
   if (webSearchEnabled && retrieved.length === 0) {
-    trace.push({ agent: '웹 정찰자', status: webSearch.sources.length > 0 ? 'completed' : 'fallback', summary: webSearch.sources.length > 0 ? `개인 기록에 없는 주제로 웹 출처 ${webSearch.sources.length}개를 확보했습니다.` : (webSearch.configured ? '웹 검색 결과를 찾지 못했습니다.' : 'TAVILY_API_KEY가 설정되지 않아 웹 검색을 건너뛰었습니다.') });
+    const hasWebEvidence = webSearch.sources.length > 0 || Boolean(webSearch.answer);
+    trace.push({ agent: '웹 정찰자', status: hasWebEvidence ? 'completed' : 'fallback', summary: hasWebEvidence ? `개인 기록에 없는 주제로 신뢰도 기준을 통과한 웹 근거 ${webSearch.sources.length}개를 확보했습니다.` : (webSearch.configured ? '웹 검색 결과를 찾지 못했습니다.' : 'TAVILY_API_KEY가 설정되지 않아 웹 검색을 건너뛰었습니다.') });
   } else if (webSearchEnabled) {
     trace.push({ agent: '웹 정찰자', status: 'completed', summary: '개인 방문 기록에서 충분한 근거를 찾아 웹 검색을 호출하지 않았습니다.' });
   }
@@ -240,9 +242,9 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
   const highlightedVisitIds = retrieved.map(({ visit }) => visit.id);
   trace.push({ agent: '지도 항해자', status: 'completed', summary: `관련 관심 축 ${highlightedCandidateIds.length}개와 근거 방문 ${highlightedVisitIds.length}개를 강조하도록 전달했습니다.` });
 
-  let answer = fallbackResponse(message, intent, retrieved, verifiedRelationships, webSearch.sources);
+  let answer = fallbackResponse(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer);
   try {
-    const modelAnswer = await composeWithModel(message, intent, retrieved, verifiedRelationships, webSearch.sources);
+    const modelAnswer = await composeWithModel(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer);
     if (modelAnswer) answer = modelAnswer;
     trace.push({ agent: '응답 구성자', status: modelAnswer ? 'completed' : 'fallback', summary: modelAnswer ? '검증된 컨텍스트만 사용해 답변을 구성했습니다.' : '모델 응답 없이 근거 기반 요약으로 답변했습니다.' });
   } catch {
@@ -258,7 +260,7 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
     highlightedVisitIds,
     webSearchRequested: webSearchEnabled,
     webSearchAttempted,
-    webSearchUsed: webSearchAttempted && webSearch.sources.length > 0,
+    webSearchUsed: webSearchAttempted && (webSearch.sources.length > 0 || Boolean(webSearch.answer)),
     webSearchConfigured: webSearch.configured,
     webSearchError: webSearch.error,
     webSources: webSearch.sources,

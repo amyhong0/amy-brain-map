@@ -366,8 +366,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     role={isEvidenceNode ? undefined : 'button'}
                     tabIndex={isEvidenceNode ? -1 : 0}
                     aria-label={isEvidenceNode ? `${node.label}, 현재 질문의 방문 근거, ${node.evidenceVisit?.domain}, ${node.evidenceVisit?.visitCount}회 방문` : `${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[status].label}, 연결 ${degree}개. 상세 연결 검토 선택`}
-                    onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
-                    onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
+                    onClick={(event) => { event.stopPropagation(); if ((isHighlighted || isSelected) && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
+                    onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if ((isHighlighted || isSelected) && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
                     className={`map-node-reed ${isEvidenceNode ? '' : 'cursor-pointer outline-none'}`}
                     style={{
                       opacity: isDimmed ? 0.3 : 1,

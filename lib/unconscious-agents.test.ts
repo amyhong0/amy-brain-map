@@ -60,4 +60,14 @@ describe('runUnconsciousQuery', () => {
     expect(result.matchedVisits).toHaveLength(0);
     expect(result.highlightedCandidateIds).toHaveLength(0);
   });
+
+  it('interprets a recent recurring-topic question without treating generic question words as search keywords', async () => {
+    const result = await runUnconsciousQuery('최근 일주일 동안 반복해서 본 주제는 뭐야?', [visit({ visitCount: 5 })], [candidate()], false);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.highlightedCandidateIds).toEqual(['candidate-ai-1']);
+    expect(result.answer).toContain('반복해서 살펴본 페이지');
+    expect(result.answer).not.toContain('직접 맞는 방문 흔적을 찾지 못했습니다');
+    expect(result.trace.find((entry) => entry.agent === '질문 해석자')?.summary).toContain('반복 관심 탐색');
+  });
 });

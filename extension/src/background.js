@@ -4,6 +4,7 @@ const STATE_KEY = 'brainOfficeSyncState';
 const SYNC_ALARM = 'brain-office-history-sync';
 const MAX_BATCH_SIZE = 500;
 const MAX_QUEUE_SIZE = 5_000;
+const DASHBOARD_MATCHES = ['https://amy-brain-map.vercel.app/*', 'http://localhost/*'];
 
 const EMPTY_SETTINGS = {
   endpoint: '',
@@ -69,9 +70,16 @@ function apiUrl(endpoint, path) {
   return `${endpoint.replace(/\/$/, '')}${path}`;
 }
 
-async function registerDashboardBridge(endpoint) {
-  const url = new URL(endpoint);
-  const matches = [`${url.protocol}//${url.host}/*`];
+function isSupportedDashboard(endpoint) {
+  try {
+    const url = new URL(endpoint);
+    return url.origin === 'https://amy-brain-map.vercel.app' || url.origin === 'http://localhost:3000';
+  } catch {
+    return false;
+  }
+}
+
+async function registerDashboardBridge() {
   try {
     await chrome.scripting.unregisterContentScripts({ ids: ['amy-brain-map-dashboard-bridge'] });
   } catch {
@@ -79,7 +87,7 @@ async function registerDashboardBridge(endpoint) {
   }
   await chrome.scripting.registerContentScripts([{
     id: 'amy-brain-map-dashboard-bridge',
-    matches,
+    matches: DASHBOARD_MATCHES,
     js: ['src/dashboard-bridge.js'],
     runAt: 'document_idle',
     persistAcrossSessions: true,
@@ -94,9 +102,32 @@ async function exchangeConnectCode(endpoint, connectCode, installationId) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.installationToken) {
-    throw new Error(payload.error || `연결 코드 확인에 실패했습니다 (${response.status}).`);
+    throw new Error(payload.error || `자동 연결 요청이 실패했습니다 (${response.status}).`);
   }
   return payload.installationToken;
+}
+
+async function connectFromDashboard(endpoint, connectCode) {
+  const normalizedEndpoint = String(endpoint || '').trim().replace(/\/$/, '');
+  const normalizedCode = String(connectCode || '').trim().toUpperCase();
+  if (!isSupportedDashboard(normalizedEndpoint)) throw new Error('지원되지 않는 Amy Brain Map 대시보드 주소입니다.');
+  if (!/^ABM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(normalizedCode)) throw new Error('대시보드의 자동 연결 권한을 확인하지 못했습니다. 웹 페이지를 새로고침한 뒤 다시 시도하세요.');
+
+  const current = await getSettings();
+  const installationId = current.installationId || crypto.randomUUID();
+  const installationToken = await exchangeConnectCode(normalizedEndpoint, normalizedCode, installationId);
+  await chrome.storage.local.set({
+    [SETTINGS_KEY]: {
+      ...current,
+      endpoint: normalizedEndpoint,
+      installationId,
+      installationToken,
+      enabled: true,
+    },
+  });
+  await registerDashboardBridge();
+  await setState({ status: 'ready', lastError: '' });
+  return { installationId };
 }
 
 async function uploadBatch(settings, visits) {
@@ -155,7 +186,7 @@ async function syncInitialHistory(days = 3650) {
   const settings = await getSettings();
   if (!configuredForSync(settings)) {
     await setState({ status: 'needs_configuration' });
-    return { synced: 0, queued: 0, configured: false, error: '확장 프로그램 연결 코드 설정이 필요합니다.' };
+    return { synced: 0, queued: 0, configured: false, error: '웹 대시보드에서 Chrome 기록 가져오기를 눌러 자동 연결을 시작해 주세요.' };
   }
   const startTime = Date.now() - Math.max(1, Math.min(days, 3650)) * 24 * 60 * 60 * 1000;
   const rawRecords = await chrome.history.search({ text: '', startTime, maxResults: 100000 });
@@ -181,15 +212,14 @@ async function syncInitialHistory(days = 3650) {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
+  await registerDashboardBridge();
   const settings = await getSettings();
-  if (settings.endpoint) await registerDashboardBridge(settings.endpoint);
   await setState({ status: settings.enabled ? 'ready' : 'paused' });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 30 });
-  const settings = await getSettings();
-  if (settings.endpoint) await registerDashboardBridge(settings.endpoint);
+  await registerDashboardBridge();
   await syncPending();
 });
 
@@ -209,26 +239,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ...(state[STATE_KEY] || {}), configured: Boolean(settings.endpoint && settings.installationToken), enabled: settings.enabled });
       return;
     }
-    if (message.type === 'configure') {
-      const current = await getSettings();
-      const endpoint = String(message.endpoint || '').trim().replace(/\/$/, '');
-      const connectCode = String(message.connectCode || '').trim().toUpperCase();
-      const enabled = message.enabled === true;
-      if (!/^https?:\/\//i.test(endpoint)) throw new Error('앱 주소는 http:// 또는 https://로 시작해야 합니다.');
-      if (!/^ABM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(connectCode)) throw new Error('웹 대시보드에서 발급한 연결 코드를 입력해 주세요.');
-      const url = new URL(endpoint);
-      const originPattern = `${url.protocol}//${url.host}/*`;
-      const hasPermission = await chrome.permissions.contains({ origins: [originPattern] });
-      const permitted = hasPermission || await chrome.permissions.request({ origins: [originPattern] });
-      if (!permitted) throw new Error('선택한 앱 주소에 연결할 권한이 필요합니다.');
-      const installationId = current.installationId || crypto.randomUUID();
-      const installationToken = await exchangeConnectCode(endpoint, connectCode, installationId);
-      const next = { ...current, endpoint, installationToken, enabled, installationId };
-      await chrome.storage.local.set({ [SETTINGS_KEY]: next });
-      await registerDashboardBridge(endpoint);
-      await setState({ status: enabled ? 'ready' : 'paused', lastError: '' });
-      sendResponse({ success: true, configured: true });
-      if (enabled) await syncPending();
+    if (message.type === 'auto-connect-and-initial-sync') {
+      await connectFromDashboard(message.endpoint, message.connectCode);
+      sendResponse({ success: true, started: true });
+      await syncInitialHistory(Number(message.days || 3650));
       return;
     }
     if (message.type === 'initial-sync') {

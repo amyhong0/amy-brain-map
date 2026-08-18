@@ -37,10 +37,10 @@ function progressSummary(state) {
 }
 
 function syncNote(state, progress) {
-  if (!state.configured) return '아래 연결 설정 열기에서 앱 주소와 대시보드 연결 코드를 입력하세요.';
-  if (!state.enabled) return '수집이 일시정지되어 있습니다. 연결 설정에서 동기화를 다시 켜세요.';
+  if (!state.configured) return 'Amy Brain Map 웹 대시보드에서 Chrome 기록 가져오기를 누르면 자동으로 연결됩니다.';
+  if (!state.enabled) return '수집이 일시정지되어 있습니다. 웹 대시보드에서 Chrome 기록 가져오기를 다시 누르면 자동으로 다시 연결됩니다.';
   if (state.status === 'syncing') return progress.total > 0 ? `Chrome 전체 기록을 안전하게 전송하고 있습니다. ${progress.percentage}% 완료` : '새로 쌓인 방문 기록을 전송하고 있습니다.';
-  if (state.status === 'error') return state.lastError || '동기화 중 오류가 발생했습니다. 연결 설정을 확인한 뒤 다시 시도하세요.';
+  if (state.status === 'error') return state.lastError || '동기화 중 오류가 발생했습니다. 웹 대시보드에서 Chrome 기록 가져오기를 다시 시도하세요.';
   if (state.status === 'queued') return `${Number(state.queuedCount || 0).toLocaleString('ko-KR')}건을 다음 동기화에서 전송합니다.`;
   if (state.lastSyncedAt) return '동기화가 완료되었습니다. 새 방문 기록은 자동으로 이어서 수집합니다.';
   return 'Chrome 전체 기록을 가져오거나, 새 방문 기록을 기다리고 있습니다.';
@@ -84,8 +84,12 @@ async function openOptions() {
   await chrome.runtime.openOptionsPage();
 }
 
+async function openDashboard() {
+  await chrome.tabs.create({ url: 'https://amy-brain-map.vercel.app/' });
+}
+
 syncNowButton.addEventListener('click', async () => {
-  if (!latestState.configured) return openOptions();
+  if (!latestState.configured) return openDashboard();
   try {
     syncNowButton.disabled = true;
     syncNowButton.textContent = '동기화 중…';
@@ -99,7 +103,7 @@ syncNowButton.addEventListener('click', async () => {
 });
 
 initialSyncButton.addEventListener('click', async () => {
-  if (!latestState.configured) return openOptions();
+  if (!latestState.configured) return openDashboard();
   try {
     initialSyncButton.disabled = true;
     initialSyncButton.textContent = '기록을 준비 중…';

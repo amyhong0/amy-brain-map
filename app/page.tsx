@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Activity, Bot, BrainCircuit, Check, ChevronRight, Copy, ExternalLink, KeyRound,
+  Activity, Bot, BrainCircuit, Check, ChevronRight, Copy, ExternalLink,
   LogIn, LogOut, Network, Play, RefreshCw, Search, Send, ShieldCheck, Sparkles, UserRound, X,
 } from 'lucide-react';
 import UnconsciousMap from '@/components/unconscious/UnconsciousMap';
@@ -61,9 +61,6 @@ function Metric({ value, label, tone = 'blue' }: { value: number | string; label
 export default function Home() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [connectCode, setConnectCode] = useState('');
-  const [connectCodeExpiresAt, setConnectCodeExpiresAt] = useState<string | null>(null);
-  const [isIssuingConnectCode, setIsIssuingConnectCode] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [privacy, setPrivacy] = useState<PrivacySnapshot | null>(null);
   const [visits, setVisits] = useState<RecentVisit[]>([]);
@@ -151,35 +148,6 @@ export default function Home() {
     setRuns([]);
     setQueryResult(null);
     setSelectedCandidate(null);
-    setConnectCode('');
-    setConnectCodeExpiresAt(null);
-  };
-
-  const issueConnectCode = async () => {
-    if (!user || isIssuingConnectCode) return;
-    setIsIssuingConnectCode(true);
-    setError('');
-    try {
-      const response = await fetch('/api/unconscious/extension/connect-code', { method: 'POST', headers: requestHeaders() });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '연결 코드를 발급하지 못했습니다.');
-      setConnectCode(data.code);
-      setConnectCodeExpiresAt(data.expiresAt);
-    } catch (issueError) {
-      setError(visitorFacingError(issueError, '연결 코드를 발급하지 못했습니다.'));
-    } finally {
-      setIsIssuingConnectCode(false);
-    }
-  };
-
-  const copyConnectCode = async () => {
-    if (!connectCode) return;
-    try {
-      await navigator.clipboard.writeText(connectCode);
-      setHistorySyncMessage('연결 코드를 복사했습니다. 확장 프로그램 설정에 붙여넣으세요.');
-    } catch {
-      setError('연결 코드 복사에 실패했습니다. 코드를 직접 선택해 복사해 주세요.');
-    }
   };
 
   const exportMyData = async () => {
@@ -203,21 +171,25 @@ export default function Home() {
     if (!user || isHistorySyncing) return;
     setIsHistorySyncing(true);
     setHistorySyncProgress(0);
-    setHistorySyncMessage('Chrome 확장 프로그램에 현재 남아 있는 방문 기록을 요청하는 중…');
+    setHistorySyncMessage('Chrome 확장 프로그램을 자동으로 연결하고 방문 기록을 준비하는 중…');
     setError('');
     try {
+      const connectionResponse = await fetch('/api/unconscious/extension/connect-code', { method: 'POST', headers: requestHeaders() });
+      const connectionData = await connectionResponse.json();
+      if (!connectionResponse.ok || !connectionData.code) throw new Error(connectionData.error || 'Chrome 확장 프로그램 연결을 준비하지 못했습니다.');
+
       const requestId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
       const result = await new Promise<{ queuedFromHistory?: number; synced?: number; error?: string }>((resolve, reject) => {
         const timeoutId = window.setTimeout(() => {
           window.removeEventListener('message', handleMessage);
-          reject(new Error('Chrome 확장 프로그램으로부터 응답이 없습니다. 확장 프로그램 설정에서 이 앱 주소와 대시보드 연결 코드를 다시 저장한 뒤 페이지를 새로고침하세요.'));
+          reject(new Error('Chrome 확장 프로그램으로부터 응답이 없습니다. 확장 프로그램이 설치되어 있는지 확인하고, Chrome 확장 프로그램 관리 화면에서 새로고침한 뒤 이 페이지를 다시 열어 주세요.'));
         }, 20 * 60 * 1_000);
         function handleMessage(event: MessageEvent) {
           if (event.source !== window || event.origin !== window.location.origin) return;
           const response = event.data;
           if (response?.source !== 'amy-brain-map-extension' || response?.requestId !== requestId) return;
           if (response.type === 'initial-history-sync-started') {
-            setHistorySyncMessage('Chrome 기록을 찾았습니다. 안전하게 동기화를 시작합니다…');
+            setHistorySyncMessage('Chrome 프로필이 자동으로 연결되었습니다. 기록을 찾아 동기화를 시작합니다…');
             return;
           }
           if (response.type === 'initial-history-sync-progress') {
@@ -237,7 +209,7 @@ export default function Home() {
           resolve(response.result || {});
         }
         window.addEventListener('message', handleMessage);
-        window.postMessage({ source: 'amy-brain-map-dashboard', type: 'initial-history-sync', requestId }, window.location.origin);
+        window.postMessage({ source: 'amy-brain-map-dashboard', type: 'auto-connect-and-initial-history-sync', requestId, connectCode: connectionData.code }, window.location.origin);
       });
       if (result.error) throw new Error(result.error);
       setIsAnalyzing(true);
@@ -252,7 +224,7 @@ export default function Home() {
     } catch (syncError) {
       setError(visitorFacingError(syncError, 'Chrome 기록을 가져오지 못했습니다.'));
       setHistorySyncProgress(null);
-      setHistorySyncMessage('Chrome 확장 프로그램의 연결 상태를 확인한 뒤 다시 시도하세요.');
+      setHistorySyncMessage('Chrome 확장 프로그램이 설치·활성화되어 있는지 확인한 뒤 다시 시도하세요.');
     } finally {
       setIsAnalyzing(false);
       setIsHistorySyncing(false);
@@ -328,11 +300,11 @@ export default function Home() {
           </div>
         </header>
 
-        {!authLoading && !user && <section className="brain-card mt-6 overflow-hidden rounded-3xl border-amber-200 bg-gradient-to-br from-amber-50 via-white to-blue-50 p-5 md:p-6"><div className="flex flex-col gap-6"><div className="max-w-2xl"><div className="flex items-center gap-2 text-sm font-bold text-amber-900"><UserRound className="h-4 w-4" aria-hidden="true" />처음 오셨나요?</div><h2 className="mt-2 text-xl font-extrabold tracking-tight text-slate-950">나의 탐색 지도를 시작하는 3단계</h2><p className="mt-2 text-sm leading-6 text-slate-600">아래 순서로 한 번만 연결하면, 이후에는 Chrome에서 쌓인 탐색 흔적을 지도로 읽어볼 수 있습니다.</p></div><ol className="grid gap-3 md:grid-cols-3"><li className="rounded-2xl border border-amber-100 bg-white/80 p-4"><div className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-amber-100 text-xs font-extrabold text-amber-900">1</span><div><p className="text-sm font-extrabold text-slate-900">Google 계정으로 시작</p><p className="mt-1 text-xs leading-5 text-slate-600">아래 버튼을 눌러 나만의 지도에 로그인합니다.</p></div></div></li><li className="rounded-2xl border border-blue-100 bg-white/80 p-4"><div className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-blue-100 text-xs font-extrabold text-blue-800">2</span><div><p className="text-sm font-extrabold text-slate-900">Chrome 확장 프로그램 설치</p><p className="mt-1 text-xs leading-5 text-slate-600">Chrome에서 Amy Brain Map 확장 프로그램을 설치하고 연결 설정을 엽니다.</p></div></div></li><li className="rounded-2xl border border-violet-100 bg-white/80 p-4"><div className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-violet-100 text-xs font-extrabold text-violet-800">3</span><div><p className="text-sm font-extrabold text-slate-900">연결 코드 입력 후 기록 동기화</p><p className="mt-1 text-xs leading-5 text-slate-600">로그인 뒤 발급되는 코드를 확장 프로그램에 넣고 기록을 가져옵니다.</p></div></div></li></ol><div className="flex flex-col gap-3 border-t border-amber-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-slate-500">연결 코드는 로그인 뒤에 발급되며, 처음 연결할 때만 사용합니다.</p><button type="button" onClick={startGoogleLogin} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200"><LogIn className="h-4 w-4" aria-hidden="true" />Google로 시작하기</button></div></div></section>}
+        {!authLoading && !user && <section className="brain-card mt-6 overflow-hidden rounded-3xl border-amber-200 bg-gradient-to-br from-amber-50 via-white to-blue-50 p-5 md:p-6"><div className="flex flex-col gap-6"><div className="max-w-2xl"><div className="flex items-center gap-2 text-sm font-bold text-amber-900"><UserRound className="h-4 w-4" aria-hidden="true" />처음 오셨나요?</div><h2 className="mt-2 text-xl font-extrabold tracking-tight text-slate-950">나의 탐색 지도를 시작하는 3단계</h2><p className="mt-2 text-sm leading-6 text-slate-600">아래 순서로 한 번만 연결하면, 이후에는 Chrome에서 쌓인 탐색 흔적을 지도로 읽어볼 수 있습니다.</p></div><ol className="grid gap-3 md:grid-cols-3"><li className="rounded-2xl border border-amber-100 bg-white/80 p-4"><div className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-amber-100 text-xs font-extrabold text-amber-900">1</span><div><p className="text-sm font-extrabold text-slate-900">Google 계정으로 시작</p><p className="mt-1 text-xs leading-5 text-slate-600">아래 버튼을 눌러 나만의 지도에 로그인합니다.</p></div></div></li><li className="rounded-2xl border border-blue-100 bg-white/80 p-4"><div className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-blue-100 text-xs font-extrabold text-blue-800">2</span><div><p className="text-sm font-extrabold text-slate-900">Chrome 확장 프로그램 설치</p><p className="mt-1 text-xs leading-5 text-slate-600">Chrome에서 Amy Brain Map 확장 프로그램을 설치합니다.</p></div></div></li><li className="rounded-2xl border border-violet-100 bg-white/80 p-4"><div className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-violet-100 text-xs font-extrabold text-violet-800">3</span><div><p className="text-sm font-extrabold text-slate-900">Chrome 기록 가져오기</p><p className="mt-1 text-xs leading-5 text-slate-600">로그인 뒤 Chrome 기록 가져오기 버튼을 누르면 자동으로 연결하고 기록을 가져옵니다.</p></div></div></li></ol><div className="flex flex-col gap-3 border-t border-amber-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-slate-500">별도의 연결 코드 입력 없이 버튼 한 번으로 현재 Chrome 프로필을 연결합니다.</p><button type="button" onClick={startGoogleLogin} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200"><LogIn className="h-4 w-4" aria-hidden="true" />Google로 시작하기</button></div></div></section>}
 
         {user && <section className="brain-card mt-5 grid gap-4 rounded-3xl p-5 md:p-6 lg:grid-cols-[1fr_auto]"><div><p className="text-base font-bold text-slate-900">{user.name || user.email}님의 개인 지도</p></div><div className="flex flex-wrap items-center gap-2"><StatusPill tone="green"><ShieldCheck className="h-3.5 w-3.5" />계정별 격리</StatusPill><button type="button" onClick={exportMyData} disabled={isExporting} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 text-xs font-bold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-55">{isExporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}{isExporting ? '내보내기 준비 중' : '내 기록 내보내기'}</button></div></section>}
 
-        {needsConnection && <section className="brain-card mt-5 rounded-3xl border-[#d9b987] bg-[#fffaf0] p-5 md:p-6"><div className="grid gap-5 lg:grid-cols-[1fr_auto]"><div><div className="flex items-center gap-2 text-sm font-extrabold text-[#553b20]"><KeyRound className="h-4 w-4" />Chrome 기록 연결</div><p className="mt-2 max-w-2xl text-sm leading-6 text-[#6d573f]">Chrome 툴바에서 <strong>Amy Brain Map 확장 프로그램 아이콘</strong>을 누른 뒤 <strong>연결 설정 열기</strong>에서 앱 주소와 아래 연결 코드를 입력하세요. 코드는 한 번만 사용할 수 있고 10분 뒤 만료됩니다. 운영자 비밀키를 입력하거나 공유할 필요가 없습니다.</p>{connectCode && <div className="mt-4 flex flex-wrap items-center gap-2"><code className="rounded-xl border border-[#d9b987] bg-white px-3 py-2 font-mono text-sm font-bold tracking-[0.12em] text-[#553b20]">{connectCode}</code><button type="button" onClick={copyConnectCode} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[#d9b987] bg-white px-3 text-xs font-bold text-[#553b20] transition hover:bg-[#fff3dc]"><Copy className="h-3.5 w-3.5" />복사</button><span className="text-xs text-[#80684b]">{connectCodeExpiresAt ? `${formatDate(connectCodeExpiresAt)}까지 사용 가능` : ''}</span></div>}</div><button type="button" onClick={issueConnectCode} disabled={isIssuingConnectCode} className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-[#d46845] px-4 py-2.5 text-sm font-extrabold text-[#fffaf0] shadow-lg shadow-[#7d3a29]/15 transition hover:bg-[#be5438] disabled:cursor-not-allowed disabled:opacity-55">{isIssuingConnectCode ? <RefreshCw className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}{connectCode ? '새 연결 코드 발급' : '연결 코드 발급'}</button></div></section>}
+        {needsConnection && <section className="brain-card mt-5 rounded-3xl border-[#d9b987] bg-[#fffaf0] p-5 md:p-6"><div className="grid gap-5 lg:grid-cols-[1fr_auto]"><div><div className="flex items-center gap-2 text-sm font-extrabold text-[#553b20]"><Network className="h-4 w-4" aria-hidden="true" />Chrome 기록 가져오기</div><p className="mt-2 max-w-2xl text-sm leading-6 text-[#6d573f]">Amy Brain Map 확장 프로그램이 설치되어 있다면, 아래 버튼을 한 번만 누르세요. 현재 로그인한 계정과 이 Chrome 프로필을 자동으로 연결한 뒤 방문 기록을 가져옵니다.</p></div><button type="button" onClick={requestHistoryFromChrome} disabled={isHistorySyncing || isAnalyzing} className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-[#d46845] px-4 py-2.5 text-sm font-extrabold text-[#fffaf0] shadow-lg shadow-[#7d3a29]/15 transition hover:bg-[#be5438] disabled:cursor-not-allowed disabled:opacity-55">{isHistorySyncing || isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isHistorySyncing ? 'Chrome 기록을 읽는 중…' : isAnalyzing ? '패턴을 분석하는 중…' : 'Chrome 기록 가져오기'}</button></div></section>}
 
         {settingsOpen && <section className="brain-card mt-5 grid gap-4 rounded-3xl p-5 md:p-6 lg:grid-cols-[1fr_1fr_auto]"><div><p className="text-base font-bold text-slate-900">탐색 경계 설정</p><p className="mt-2 text-sm leading-6 text-slate-600">수집 범위는 URL·제목·방문 시각·방문 횟수로 제한됩니다. 페이지 본문은 읽거나 저장하지 않습니다.</p></div><form onSubmit={addBlockedDomain} className="flex items-end gap-2"><label className="block flex-1 text-xs font-semibold text-slate-600">수집에서 제외할 도메인<input value={policyDomain} onChange={(event) => setPolicyDomain(event.target.value)} placeholder="예: bank.example.com" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100" /></label><button className="min-h-10 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100">차단</button></form><div className="flex items-start justify-end"><button type="button" aria-label="개인정보 설정 닫기" onClick={() => setSettingsOpen(false)} className="grid h-10 w-10 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X className="h-4 w-4" /></button></div>{privacy?.policies?.length ? <div className="lg:col-span-3 flex flex-wrap gap-2 border-t border-slate-100 pt-4">{privacy.policies.filter((policy) => policy.mode === 'block').slice(0, 12).map((policy) => <StatusPill key={policy.domain} tone="slate">차단 · {policy.domain}</StatusPill>)}</div> : null}</section>}
 

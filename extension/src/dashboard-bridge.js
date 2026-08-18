@@ -52,11 +52,15 @@ async function trackInitialSync(requestId, requestedAt) {
 window.addEventListener('message', async (event) => {
   if (event.source !== window || event.origin !== window.location.origin) return;
   const message = event.data;
-  if (!message || message.source !== REQUEST_SOURCE || message.type !== 'initial-history-sync') return;
+  if (!message || message.source !== REQUEST_SOURCE) return;
+  if (message.type !== 'initial-history-sync' && message.type !== 'auto-connect-and-initial-history-sync') return;
 
   try {
     const requestedAt = Date.now();
-    const started = await chrome.runtime.sendMessage({ type: 'initial-sync', days: 3650 });
+    const extensionMessage = message.type === 'auto-connect-and-initial-history-sync'
+      ? { type: 'auto-connect-and-initial-sync', endpoint: window.location.origin, connectCode: message.connectCode, days: 3650 }
+      : { type: 'initial-sync', days: 3650 };
+    const started = await chrome.runtime.sendMessage(extensionMessage);
     if (started?.error) throw new Error(started.error);
     postToDashboard({ type: 'initial-history-sync-started', requestId: message.requestId });
     await trackInitialSync(message.requestId, requestedAt);

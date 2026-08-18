@@ -209,21 +209,51 @@ export async function connectExtension(connectCode: string, installationId: stri
     [hash(connectCode)],
   );
   if (!rows[0]) return null;
+
   const record = rows[0] as Record<string, unknown>;
+  const pendingId = String(record.id);
+  const userId = String(record.user_id);
   const token = crypto.randomBytes(32).toString('base64url');
-  await database().query(
-    `UPDATE extension_installations
-     SET installation_id = $2,
-         access_token_hash = $3,
-         connect_code_hash = NULL,
-         connect_code_expires_at = NULL,
-         connected_at = NOW(),
-         last_seen_at = NOW(),
-         updated_at = NOW()
-     WHERE id = $1`,
-    [String(record.id), installationId, hash(token)],
+  const tokenHash = hash(token);
+  const existingRows = await database().query(
+    `SELECT id FROM extension_installations
+     WHERE installation_id = $1
+       AND id <> $2
+     LIMIT 1`,
+    [installationId, pendingId],
   );
-  return { token, userId: String(record.user_id) };
+
+  if (existingRows[0]) {
+    const existingId = String((existingRows[0] as Record<string, unknown>).id);
+    await database().query(
+      `UPDATE extension_installations
+       SET user_id = $2,
+           access_token_hash = $3,
+           connect_code_hash = NULL,
+           connect_code_expires_at = NULL,
+           connected_at = NOW(),
+           last_seen_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [existingId, userId, tokenHash],
+    );
+    await database().query('DELETE FROM extension_installations WHERE id = $1', [pendingId]);
+  } else {
+    await database().query(
+      `UPDATE extension_installations
+       SET installation_id = $2,
+           access_token_hash = $3,
+           connect_code_hash = NULL,
+           connect_code_expires_at = NULL,
+           connected_at = NOW(),
+           last_seen_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [pendingId, installationId, tokenHash],
+    );
+  }
+
+  return { token, userId };
 }
 
 export async function requireExtensionInstallation(request: NextRequest, installationId: string): Promise<{ installation: ExtensionInstallationAuth } | { response: NextResponse }> {

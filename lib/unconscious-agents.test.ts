@@ -119,3 +119,37 @@ describe('time-flow and web-search states', () => {
     expect(result.webSearchUsed).toBe(false);
   });
 });
+
+
+describe('private-history-only responses', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = 'should-not-be-called-for-private-history';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('finds a semantically related yesterday visit without using web search when the toggle is off', async () => {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const todayStart = new Date(`${values.year}-${values.month}-${values.day}T00:00:00+09:00`).getTime();
+    const yesterdayNoon = todayStart - 12 * 60 * 60 * 1000;
+    const bootcamp = visit({
+      id: 'visit-openai-bootcamp',
+      normalizedUrl: 'https://academy.openai.com/api-builder-bootcamp',
+      url: 'https://academy.openai.com/api-builder-bootcamp',
+      title: 'OpenAI API Builder Bootcamp',
+      domain: 'academy.openai.com',
+      visitCount: 2,
+      lastVisitTime: yesterdayNoon,
+    });
+
+    const result = await runUnconsciousQuery('내가 어제 본 것 중에 AI 콘텐츠 제작 관련된 게 뭐더라?', [bootcamp], [], false);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.matchedVisits[0].id).toBe('visit-openai-bootcamp');
+    expect(result.answer).toContain('OpenAI API Builder Bootcamp');
+    expect(result.answer).not.toContain('웹 검색으로 보강한 답변');
+    expect(result.webSearchRequested).toBe(false);
+    expect(result.webSearchAttempted).toBe(false);
+    expect(result.webSearchUsed).toBe(false);
+  });
+});

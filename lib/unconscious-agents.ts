@@ -20,6 +20,12 @@ interface ScoredVisit {
   score: number;
 }
 
+const SEMANTIC_QUERY_HINTS: Record<string, string[]> = {
+  'ai': ['openai', 'gpt', 'llm', 'agent', 'gemini', 'claude', 'copilot'],
+  '콘텐츠': ['content', 'creator', 'video', 'image', 'media', 'design', 'story'],
+  '제작': ['create', 'creator', 'builder', 'production', 'generate', 'api', 'workflow'],
+};
+
 const QUERY_STOP_WORDS = new Set([
   '내가', '내', '것', '중', '관련', '관련된', '뭐', '뭐더라', '무엇', '뭐야', '언제', '언제야', '어제', '오늘', '최근', '지난', '이번', '일주일', '동안', '본', '봤', '보았', '열어본', '읽은', '찾아', '알려', '질문', '콘텐츠', '내용', '대해', '에서', '으로', '그리고', '있는', '없는', '주제', '관심', '반복', '반복해서', '자주', '흐름', '연결', '가장', '활발', '활발했', '활발했던', '시점', '때', '기간', 'the', 'and', 'what', 'did', 'i', 'see',
 ]);
@@ -60,10 +66,15 @@ function parseIntent(message: string): QueryIntent {
   return { terms: [...new Set(terms)].slice(0, 10), period, mode };
 }
 
+function matchesQueryTerm(searchable: string, term: string) {
+  if (searchable.includes(term)) return true;
+  return (SEMANTIC_QUERY_HINTS[term] || []).some((hint) => searchable.includes(hint));
+}
+
 function scoreVisit(visit: BrowserVisit, intent: QueryIntent): ScoredVisit | null {
   if (intent.period && (visit.lastVisitTime < intent.period.start || visit.lastVisitTime >= intent.period.end)) return null;
   const searchable = `${visit.title} ${visit.domain} ${visit.normalizedUrl}`.toLocaleLowerCase('ko-KR');
-  const matchedTerms = intent.terms.filter((term) => searchable.includes(term));
+  const matchedTerms = intent.terms.filter((term) => matchesQueryTerm(searchable, term));
   const isDiscoveryIntent = intent.mode !== 'keyword' && intent.terms.length === 0;
   const queryScore = isDiscoveryIntent ? 0.24 : intent.terms.length === 0 ? 0.3 : matchedTerms.length / intent.terms.length;
   const recurrenceScore = Math.min(visit.visitCount, 12) * (intent.mode === 'recurring_topics' ? 0.09 : intent.mode === 'peak_activity' ? 0.08 : 0.04);
@@ -179,8 +190,8 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
   return `${periodText}기록에서 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과도 맞닿아 있습니다.` : ''} 지도에서 관련 관심 축을 강조했습니다.`;
 }
 
-async function composeWithModel(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webSearchSummary?: string) {
-  if ((intent.mode === 'recurring_topics' || intent.mode === 'peak_activity') || !process.env.NVIDIA_API_KEY || (visits.length === 0 && webSources.length === 0 && !webSearchSummary)) return null;
+async function composeWithModel(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webSearchSummary?: string, webSearchEnabled = false) {
+  if (!webSearchEnabled || visits.length > 0 || (intent.mode === 'recurring_topics' || intent.mode === 'peak_activity') || !process.env.NVIDIA_API_KEY || (webSources.length === 0 && !webSearchSummary)) return null;
   const context = {
     period: intent.period?.label || '전체 기간',
     queryTerms: intent.terms,
@@ -244,7 +255,7 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
 
   let answer = fallbackResponse(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer);
   try {
-    const modelAnswer = await composeWithModel(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer);
+    const modelAnswer = await composeWithModel(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer, webSearchEnabled);
     if (modelAnswer) answer = modelAnswer;
     trace.push({ agent: '응답 구성자', status: modelAnswer ? 'completed' : 'fallback', summary: modelAnswer ? '검증된 컨텍스트만 사용해 답변을 구성했습니다.' : '모델 응답 없이 근거 기반 요약으로 답변했습니다.' });
   } catch {

@@ -85,17 +85,34 @@ function scoreVisit(visit: BrowserVisit, intent: QueryIntent): ScoredVisit | nul
 }
 
 function rankVisits(visits: BrowserVisit[], intent: QueryIntent, limit = 8) {
-  return visits.map((visit) => scoreVisit(visit, intent)).filter((entry): entry is ScoredVisit => Boolean(entry)).sort((a, b) => b.score - a.score).slice(0, limit);
+  const deduplicated = new Map<string, ScoredVisit>();
+  for (const entry of visits.map((visit) => scoreVisit(visit, intent)).filter((entry): entry is ScoredVisit => Boolean(entry))) {
+    const key = `${entry.visit.domain}::${readableVisitLabel(entry.visit).toLocaleLowerCase('ko-KR')}`;
+    const previous = deduplicated.get(key);
+    if (!previous) {
+      deduplicated.set(key, entry);
+      continue;
+    }
+    const preferred = previous.visit.lastVisitTime >= entry.visit.lastVisitTime ? previous : entry;
+    deduplicated.set(key, {
+      visit: { ...preferred.visit, visitCount: previous.visit.visitCount + entry.visit.visitCount, lastVisitTime: Math.max(previous.visit.lastVisitTime, entry.visit.lastVisitTime) },
+      score: Math.max(previous.score, entry.score),
+    });
+  }
+  return [...deduplicated.values()].sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 function rankCandidates(candidates: DiscoveryCandidate[], intent: QueryIntent, matchedVisits: ScoredVisit[]) {
   const matchingVisitIds = new Set(matchedVisits.map((entry) => entry.visit.id));
+  const matchingDomains = new Set(matchedVisits.map((entry) => entry.visit.domain));
   return candidates
     .filter((candidate) => candidate.status !== 'rejected')
     .map((candidate) => {
       const searchable = `${candidate.subject} ${candidate.object} ${candidate.relation} ${candidate.evidence.join(' ')} ${candidate.sourceDomains.join(' ')}`.toLocaleLowerCase('ko-KR');
       const termScore = intent.terms.length === 0 ? 0.2 : intent.terms.filter((term) => searchable.includes(term)).length / intent.terms.length;
-      const provenanceScore = candidate.sourceVisitIds.some((id) => matchingVisitIds.has(id)) ? 0.35 : 0;
+      const visitOverlap = candidate.sourceVisitIds.some((id) => matchingVisitIds.has(id));
+      const domainOverlap = candidate.sourceDomains.some((domain) => matchingDomains.has(domain));
+      const provenanceScore = visitOverlap ? 0.35 : domainOverlap ? 0.22 : 0;
       return { candidate, score: termScore + provenanceScore + candidate.confidence * 0.3 };
     })
     .filter((entry) => entry.score >= 0.25)
@@ -160,6 +177,13 @@ function peakActivityResponse(visits: ScoredVisit[]) {
   return `저장된 페이지별 방문 횟수와 마지막 방문 시각을 기준으로, 가장 활발했던 시점은 **${peak.label}**입니다.\n\n그 시점의 주요 페이지: ${pages}\n\n같은 기간의 다른 날짜와 비교해 가장 강한 재방문 신호가 나타난 시점입니다.`;
 }
 
+function readableTopicLabel(message: string, intent: QueryIntent) {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  if (/ai\s*콘텐츠\s*제작/i.test(normalized)) return 'AI 콘텐츠 제작';
+  if (intent.terms.length > 0) return intent.terms.join(' ');
+  return '질문과 관련된 탐색';
+}
+
 function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webAnswer?: string) {
   if (visits.length === 0 && (webSources.length > 0 || webAnswer)) {
     if (webAnswer) return `웹 검색으로 보강한 답변입니다.\n\n${webAnswer}\n\n아래에서 답변에 참고한 출처를 확인할 수 있습니다.`;
@@ -187,7 +211,10 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
   if (intent.mode === 'connections') {
     return `${periodText}기록에서 함께 이어진 흔적으로 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과 맞닿아 있습니다.` : ' 아직 충분한 공통 근거가 없어 관련 페이지를 중심으로 표시했습니다.'}`;
   }
-  return `${periodText}기록에서 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과도 맞닿아 있습니다.` : ''} 지도에서 관련 관심 축을 강조했습니다.`;
+  const topic = readableTopicLabel(message, intent);
+  const relevantPages = [...new Map(visits.map(({ visit }) => [visit.normalizedUrl, visit])).values()].slice(0, 3);
+  const pageLines = relevantPages.map((visit, index) => `${index + 1}. **${readableVisitLabel(visit)}** — ${visit.domain}에서 ${visit.visitCount}회 확인`).join('\n');
+  return `${periodText}기록에서 **${topic}**와 관련해 다음 페이지를 확인했습니다.\n\n${pageLines}`;
 }
 
 async function composeWithModel(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webSearchSummary?: string, webSearchEnabled = false) {
@@ -244,8 +271,9 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
   // A2A handoff: the relationship verifier receives the retrieval agent's exact evidence IDs,
   // then only returns graph candidates that agree with those primary records.
   const retrievedIds = new Set(retrieved.map(({ visit }) => visit.id));
+  const retrievedDomains = new Set(retrieved.map(({ visit }) => visit.domain));
   const verifiedRelationships = retrieved.length > 0
-    ? rankCandidates(candidates, intent, retrieved).filter(({ candidate }) => candidate.sourceVisitIds.some((id) => retrievedIds.has(id)))
+    ? rankCandidates(candidates, intent, retrieved).filter(({ candidate }) => candidate.sourceVisitIds.some((id) => retrievedIds.has(id)) || candidate.sourceDomains.some((domain) => retrievedDomains.has(domain)))
     : [];
   trace.push({ agent: '관계 검증자', status: 'completed', summary: `${preliminaryRelationships.length}개 1차 관계 중 방문 출처와 교차 확인된 ${verifiedRelationships.length}개만 지도 후보로 채택했습니다.` });
 

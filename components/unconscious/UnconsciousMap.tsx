@@ -139,6 +139,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const [view, setView] = useState<'all' | 'pending' | 'confirmed'>('all');
   const [pointer, setPointer] = useState<MapPoint | null>(null);
   const highlighted = new Set(highlightedIds);
+  const highlightedKey = highlightedIds.slice().sort().join('|');
 
   const { nodes, edges } = useMemo(() => {
     const visible = candidates.filter((candidate) => {
@@ -165,7 +166,11 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     }
 
     const graphNodes = [...grouped.values()]
-      .sort((left, right) => right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR'))
+      .sort((left, right) => {
+        const leftHighlighted = left.candidates.some((candidate) => highlighted.has(candidate.id));
+        const rightHighlighted = right.candidates.some((candidate) => highlighted.has(candidate.id));
+        return Number(rightHighlighted) - Number(leftHighlighted) || right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR');
+      })
       .slice(0, 18);
     const nodeIds = new Set(graphNodes.map((node) => node.id));
     const edgesByPair = new Map<string, MapEdge>();
@@ -207,7 +212,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     }
 
     return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 28) };
-  }, [candidates, view]);
+  }, [candidates, view, highlightedKey]);
 
   const width = 920;
   const height = 535;

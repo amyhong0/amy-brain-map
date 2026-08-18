@@ -153,3 +153,41 @@ describe('private-history-only responses', () => {
     expect(result.webSearchUsed).toBe(false);
   });
 });
+
+
+describe('private-history summaries and map grounding', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = '';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('deduplicates matching pages and highlights a candidate grounded by the same domain', async () => {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const yesterdayNoon = new Date(`${values.year}-${values.month}-${values.day}T00:00:00+09:00`).getTime() - 12 * 60 * 60 * 1000;
+    const firstBootcamp = visit({
+      id: 'visit-bootcamp-1',
+      normalizedUrl: 'https://academy.openai.com/api-builder-bootcamp',
+      url: 'https://academy.openai.com/api-builder-bootcamp',
+      title: 'API Builder Bootcamp - Resource | OpenAI Academy',
+      domain: 'academy.openai.com',
+      visitCount: 2,
+      lastVisitTime: yesterdayNoon,
+    });
+    const repeatedBootcamp = visit({ ...firstBootcamp, id: 'visit-bootcamp-2', visitCount: 1, lastVisitTime: yesterdayNoon + 30 * 60 * 1000 });
+    const academyCandidate = candidate({
+      id: 'candidate-openai-academy',
+      subject: 'AI 도구 학습',
+      sourceVisitIds: ['other-openai-visit'],
+      sourceDomains: ['academy.openai.com'],
+    });
+
+    const result = await runUnconsciousQuery('내가 어제 본 것 중에 AI 콘텐츠 제작 관련된 게 뭐더라?', [firstBootcamp, repeatedBootcamp], [academyCandidate], false);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.matchedVisits[0].visitCount).toBe(3);
+    expect(result.answer.match(/API Builder Bootcamp/g)).toHaveLength(1);
+    expect(result.answer).toContain('AI 콘텐츠 제작');
+    expect(result.highlightedCandidateIds).toEqual(['candidate-openai-academy']);
+  });
+});

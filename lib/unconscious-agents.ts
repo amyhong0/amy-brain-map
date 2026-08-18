@@ -171,7 +171,7 @@ function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVi
       const pages = topic.pages.map((page) => `${readableVisitLabel(page)} (${page.domain})`).join(' · ');
       return `${index + 1}. ${topic.label}\n   관련 페이지: ${pages}`;
     });
-    return `${periodText}기록에서 반복적으로 나타난 관심은 다음과 같습니다.\n\n${topicLines.join('\n\n')}\n\n단어 조각이 아니라 공통 근거 페이지를 기준으로 묶었으며, 관련 지도 노드를 강조했습니다.`;
+    return `${periodText}기록에서 반복적으로 나타난 관심은 다음과 같습니다.\n\n${topicLines.join('\n\n')}`;
   }
   if (intent.mode === 'connections') {
     return `${periodText}기록에서 함께 이어진 흔적으로 ${visitText}을(를) 찾았습니다.${connection ? ` 이 흐름은 **${connection.subject}** → ${connection.object} 연결 가설과 맞닿아 있습니다.` : ' 아직 충분한 공통 근거가 없어 관련 페이지를 중심으로 표시했습니다.'}`;

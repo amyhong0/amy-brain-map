@@ -70,6 +70,7 @@ describe('runUnconsciousQuery', () => {
     expect(result.answer).toContain('AI 콘텐츠 제작 워크플로우');
     expect(result.answer).toContain('관련 페이지:');
     expect(result.answer).not.toContain('직접 맞는 방문 흔적을 찾지 못했습니다');
+    expect(result.answer).not.toContain('단어 조각이 아니라');
     expect(result.trace.find((entry) => entry.agent === '질문 해석자')?.summary).toContain('반복 관심 탐색');
   });
 });

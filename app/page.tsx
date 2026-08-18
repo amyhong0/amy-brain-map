@@ -180,15 +180,27 @@ export default function Home() {
 
       const requestId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
       const result = await new Promise<{ queuedFromHistory?: number; synced?: number; error?: string }>((resolve, reject) => {
-        const timeoutId = window.setTimeout(() => {
+        let bridgeTimeoutId: number | null = null;
+        let syncTimeoutId: number | null = null;
+        const cleanUp = () => {
+          if (bridgeTimeoutId !== null) window.clearTimeout(bridgeTimeoutId);
+          if (syncTimeoutId !== null) window.clearTimeout(syncTimeoutId);
           window.removeEventListener('message', handleMessage);
-          reject(new Error('Chrome 확장 프로그램으로부터 응답이 없습니다. 확장 프로그램이 설치되어 있는지 확인하고, Chrome 확장 프로그램 관리 화면에서 새로고침한 뒤 이 페이지를 다시 열어 주세요.'));
-        }, 20 * 60 * 1_000);
+        };
+        bridgeTimeoutId = window.setTimeout(() => {
+          cleanUp();
+          reject(new Error('자동 연결을 시작하지 못했습니다. Chrome 확장 프로그램을 v0.6.0 이상으로 새로고침한 뒤 이 웹 페이지도 새로고침하고 다시 시도하세요.'));
+        }, 15_000);
         function handleMessage(event: MessageEvent) {
           if (event.source !== window || event.origin !== window.location.origin) return;
           const response = event.data;
           if (response?.source !== 'amy-brain-map-extension' || response?.requestId !== requestId) return;
           if (response.type === 'initial-history-sync-started') {
+            if (bridgeTimeoutId !== null) window.clearTimeout(bridgeTimeoutId);
+            syncTimeoutId = window.setTimeout(() => {
+              cleanUp();
+              reject(new Error('Chrome 기록 동기화가 너무 오래 걸리고 있습니다. 확장 프로그램 팝업의 오류 메시지를 확인한 뒤 다시 시도하세요.'));
+            }, 20 * 60 * 1_000);
             setHistorySyncMessage('Chrome 프로필이 자동으로 연결되었습니다. 기록을 찾아 동기화를 시작합니다…');
             return;
           }
@@ -204,8 +216,7 @@ export default function Home() {
             return;
           }
           if (response.type !== 'initial-history-sync-result') return;
-          window.clearTimeout(timeoutId);
-          window.removeEventListener('message', handleMessage);
+          cleanUp();
           resolve(response.result || {});
         }
         window.addEventListener('message', handleMessage);

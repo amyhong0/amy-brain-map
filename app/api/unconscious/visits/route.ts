@@ -22,7 +22,9 @@ function parseVisit(input: IncomingVisit) {
     ...normalized,
     url: input.url,
     title: typeof input.title === 'string' ? input.title.trim().slice(0, MAX_TITLE_LENGTH) : '',
-    lastVisitTime: typeof input.lastVisitTime === 'number' && Number.isFinite(input.lastVisitTime) ? input.lastVisitTime : Date.now(),
+    lastVisitTime: typeof input.lastVisitTime === 'number' && Number.isFinite(input.lastVisitTime)
+      ? Math.max(0, Math.floor(input.lastVisitTime))
+      : Date.now(),
     visitCount: typeof input.visitCount === 'number' && Number.isFinite(input.visitCount)
       ? Math.max(1, Math.min(Math.floor(input.visitCount), 1_000_000))
       : 1,

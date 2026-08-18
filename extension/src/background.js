@@ -38,11 +38,15 @@ async function setState(next) {
 
 function historyItem(item) {
   if (!item || !item.url || !/^https?:\/\//i.test(item.url)) return null;
+  const parsedVisitTime = Number(item.lastVisitTime);
+  const lastVisitTime = Number.isFinite(parsedVisitTime) && parsedVisitTime > 0
+    ? Math.floor(parsedVisitTime)
+    : Date.now();
   return {
     url: item.url,
     title: (item.title || '').slice(0, 300),
-    lastVisitTime: Number(item.lastVisitTime || Date.now()),
-    visitCount: Math.max(1, Number(item.visitCount || 1)),
+    lastVisitTime,
+    visitCount: Math.max(1, Math.floor(Number(item.visitCount || 1))),
   };
 }
 

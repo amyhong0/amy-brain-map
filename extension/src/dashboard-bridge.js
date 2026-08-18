@@ -31,7 +31,11 @@ async function trackInitialSync(requestId, requestedAt) {
       postToDashboard({
         type: 'initial-history-sync-result',
         requestId,
-        result: { queuedFromHistory: Number(state.totalCount || state.syncedCount || 0), synced: Number(state.syncedCount || 0) },
+        result: {
+          queuedFromHistory: Number(state.totalCount || state.syncedCount || 0),
+          synced: Number(state.syncedCount || 0),
+          incremental: state.syncMode === 'incremental',
+        },
       });
     } catch (error) {
       window.clearInterval(intervalId);

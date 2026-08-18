@@ -226,7 +226,16 @@ export async function loadUnconsciousStore(userId: string): Promise<UnconsciousS
   const [settingRows, policyRows, visitRows, candidateRows, runRows] = await Promise.all([
     sql.query('SELECT * FROM user_settings WHERE user_id = $1', [userId]),
     sql.query('SELECT * FROM domain_policies WHERE user_id = $1 ORDER BY domain ASC', [userId]),
-    sql.query('SELECT * FROM browser_visits WHERE user_id = $1 ORDER BY last_visit_time DESC', [userId]),
+    sql.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (normalized_url) *
+         FROM browser_visits
+         WHERE user_id = $1
+         ORDER BY normalized_url, last_visit_time DESC, updated_at DESC, id ASC
+       ) AS latest_visits
+       ORDER BY last_visit_time DESC`,
+      [userId],
+    ),
     sql.query('SELECT * FROM discovery_candidates WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
     sql.query('SELECT * FROM analysis_runs WHERE user_id = $1 ORDER BY started_at DESC LIMIT 100', [userId]),
   ]);
@@ -295,8 +304,24 @@ export async function ingestBrowserVisits(userId: string, installationRecordId: 
   let updated = 0;
   let blocked = 0;
   const sql = database();
+  const mergedVisits = new Map<string, IncomingStoredVisit>();
 
-  const queries = visits.map((visit) => {
+  for (const visit of visits) {
+    const existing = mergedVisits.get(visit.normalizedUrl);
+    if (!existing) {
+      mergedVisits.set(visit.normalizedUrl, visit);
+      continue;
+    }
+    const newer = visit.lastVisitTime >= existing.lastVisitTime ? visit : existing;
+    mergedVisits.set(visit.normalizedUrl, {
+      ...newer,
+      title: newer.title || existing.title || visit.title,
+      lastVisitTime: Math.max(existing.lastVisitTime, visit.lastVisitTime),
+      visitCount: Math.max(existing.visitCount, visit.visitCount),
+    });
+  }
+
+  const queries = [...mergedVisits.values()].map((visit) => {
     const contentStatus: ContentStatus = isDomainBlocked(visit.domain, policies)
       ? 'blocked'
       : canCollectContent(visit.domain, policies) ? 'eligible' : 'metadata_only';
@@ -306,7 +331,8 @@ export async function ingestBrowserVisits(userId: string, installationRecordId: 
         id, user_id, installation_id, normalized_url, url, title, domain, last_visit_time,
         visit_count, received_at, updated_at, content_status
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), $10)
-      ON CONFLICT (installation_id, normalized_url) DO UPDATE SET
+      ON CONFLICT (user_id, normalized_url) DO UPDATE SET
+        installation_id = EXCLUDED.installation_id,
         url = EXCLUDED.url,
         title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE browser_visits.title END,
         last_visit_time = GREATEST(browser_visits.last_visit_time, EXCLUDED.last_visit_time),
@@ -340,14 +366,21 @@ export async function ingestBrowserVisits(userId: string, installationRecordId: 
 
 export async function getRecentVisits(userId: string, limit = 50): Promise<BrowserVisit[]> {
   const rows = await database().query(
-    'SELECT * FROM browser_visits WHERE user_id = $1 ORDER BY last_visit_time DESC LIMIT $2',
+    `SELECT * FROM (
+       SELECT DISTINCT ON (normalized_url) *
+       FROM browser_visits
+       WHERE user_id = $1
+       ORDER BY normalized_url, last_visit_time DESC, updated_at DESC, id ASC
+     ) AS latest_visits
+     ORDER BY last_visit_time DESC
+     LIMIT $2`,
     [userId, limit],
   );
   return rows.map((row) => toVisit(row as DatabaseRow));
 }
 
 export async function countBrowserVisits(userId: string): Promise<number> {
-  const rows = await database().query('SELECT COUNT(*)::integer AS total FROM browser_visits WHERE user_id = $1', [userId]);
+  const rows = await database().query('SELECT COUNT(DISTINCT normalized_url)::integer AS total FROM browser_visits WHERE user_id = $1', [userId]);
   return asNumber((rows[0] as DatabaseRow | undefined)?.total);
 }
 
@@ -479,10 +512,12 @@ export function normalizeUrl(rawUrl: string): { normalizedUrl: string; domain: s
     if (!['http:', 'https:'].includes(parsed.protocol)) return null;
     parsed.hash = '';
     for (const key of [...parsed.searchParams.keys()]) {
-      if (/^(utm_|fbclid$|gclid$|mc_[ce]id$|ref$)/i.test(key)) parsed.searchParams.delete(key);
+      if (/^(utm_|fbclid$|gclid$|mc_[ce]id$|ref$|igshid$|si$|spm$|share$)/i.test(key)) parsed.searchParams.delete(key);
     }
+    parsed.searchParams.sort();
     if (parsed.pathname.endsWith('/') && parsed.pathname !== '/') parsed.pathname = parsed.pathname.slice(0, -1);
     const domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    parsed.hostname = domain;
     return { normalizedUrl: parsed.toString(), domain };
   } catch {
     return null;

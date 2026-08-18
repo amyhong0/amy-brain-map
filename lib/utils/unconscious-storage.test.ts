@@ -1,4 +1,4 @@
-import { normalizeEncryptionKey } from './unconscious-storage';
+import { normalizeEncryptionKey, normalizeUrl } from './unconscious-storage';
 
 describe('normalizeEncryptionKey', () => {
   it('accepts a long alphanumeric secret and derives a 32-byte AES key', () => {
@@ -17,5 +17,15 @@ describe('normalizeEncryptionKey', () => {
 
   it('rejects secrets shorter than 32 characters', () => {
     expect(() => normalizeEncryptionKey('too-short-for-storage-key')).toThrow('at least 32 characters');
+  });
+});
+
+describe('normalizeUrl', () => {
+  it('treats reordered query strings and tracking parameters as the same page', () => {
+    const first = normalizeUrl('https://www.example.com/article/?b=2&utm_source=newsletter&a=1#section');
+    const second = normalizeUrl('https://example.com/article?a=1&b=2&gclid=campaign');
+
+    expect(first).toEqual({ domain: 'example.com', normalizedUrl: 'https://example.com/article?a=1&b=2' });
+    expect(second).toEqual(first);
   });
 });

@@ -4,6 +4,7 @@ const STATE_KEY = 'brainOfficeSyncState';
 const SYNC_ALARM = 'brain-office-history-sync';
 const MAX_BATCH_SIZE = 500;
 const MAX_QUEUE_SIZE = 5_000;
+const INCREMENTAL_SYNC_OVERLAP_MS = 2 * 60 * 1_000;
 const DASHBOARD_MATCHES = ['https://amy-brain-map.vercel.app/*', 'http://localhost/*'];
 
 const EMPTY_SETTINGS = {
@@ -197,7 +198,7 @@ async function syncInitialHistory(days = 3650) {
   const records = rawRecords.map(historyItem).filter(Boolean);
   const total = records.length;
   let synced = 0;
-  await setState({ syncedCount: 0, queuedCount: total, totalCount: total, status: 'syncing', lastError: '' });
+  await setState({ syncedCount: 0, queuedCount: total, totalCount: total, syncMode: 'initial', status: 'syncing', lastError: '' });
 
   try {
     for (let start = 0; start < total; start += MAX_BATCH_SIZE) {
@@ -207,10 +208,40 @@ async function syncInitialHistory(days = 3650) {
       await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'syncing', lastError: '' });
     }
     await setState({ syncedCount: synced, queuedCount: 0, totalCount: total, status: 'idle', lastSyncedAt: new Date().toISOString(), lastError: '' });
-    return { synced, queued: 0, queuedFromHistory: total, configured: true };
+    return { synced, queued: 0, queuedFromHistory: total, incremental: false, configured: true };
   } catch (error) {
     await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
-    return { synced, queued: total - synced, queuedFromHistory: total, configured: true, error: String(error) };
+    return { synced, queued: total - synced, queuedFromHistory: total, incremental: false, configured: true, error: String(error) };
+  }
+}
+
+async function syncHistorySinceLastSync() {
+  const settings = await getSettings();
+  if (!configuredForSync(settings)) return syncInitialHistory();
+
+  const state = await chrome.storage.local.get(STATE_KEY);
+  const lastSyncedAt = Date.parse(state[STATE_KEY]?.lastSyncedAt || '');
+  if (!Number.isFinite(lastSyncedAt) || lastSyncedAt <= 0) return syncInitialHistory();
+
+  const startTime = Math.max(0, lastSyncedAt - INCREMENTAL_SYNC_OVERLAP_MS);
+  const rawRecords = await chrome.history.search({ text: '', startTime, maxResults: 100000 });
+  const records = rawRecords.map(historyItem).filter(Boolean);
+  const total = records.length;
+  let synced = 0;
+  await setState({ syncedCount: 0, queuedCount: total, totalCount: total, syncMode: 'incremental', status: 'syncing', lastError: '' });
+
+  try {
+    for (let start = 0; start < total; start += MAX_BATCH_SIZE) {
+      const batch = records.slice(start, start + MAX_BATCH_SIZE);
+      await uploadBatch(settings, batch);
+      synced += batch.length;
+      await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, syncMode: 'incremental', status: 'syncing', lastError: '' });
+    }
+    await setState({ syncedCount: synced, queuedCount: 0, totalCount: total, syncMode: 'incremental', status: 'idle', lastSyncedAt: new Date().toISOString(), lastError: '' });
+    return { synced, queued: 0, queuedFromHistory: total, incremental: true, configured: true };
+  } catch (error) {
+    await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, syncMode: 'incremental', status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
+    return { synced, queued: total - synced, queuedFromHistory: total, incremental: true, configured: true, error: String(error) };
   }
 }
 
@@ -244,14 +275,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === 'auto-connect-and-initial-sync') {
+      const wasConfigured = configuredForSync(await getSettings());
       await connectFromDashboard(message.endpoint, message.connectCode);
       sendResponse({ success: true, started: true });
-      await syncInitialHistory(Number(message.days || 3650));
+      await (wasConfigured ? syncHistorySinceLastSync() : syncInitialHistory(Number(message.days || 3650)));
       return;
     }
     if (message.type === 'initial-sync') {
       sendResponse({ success: true, started: true });
       await syncInitialHistory(Number(message.days || 3650));
+      return;
+    }
+    if (message.type === 'sync-history-since-last-sync') {
+      sendResponse({ success: true, started: true });
+      await syncHistorySinceLastSync();
       return;
     }
     if (message.type === 'sync-now') {

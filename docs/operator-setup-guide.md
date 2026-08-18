@@ -120,7 +120,7 @@ Vercel 프로젝트에서 **Settings → Environment Variables**로 이동하여
 
 ### 6.1 PostgreSQL 초기 스키마 적용
 
-`DATABASE_URL`을 개발 컴퓨터의 환경 변수 또는 `.env.local`에 설정한 뒤, 이 저장소에서 아래 명령을 **한 번만** 실행합니다. 이 명령은 사용자·세션·확장 설치·방문 기록·정책·그래프 후보·GCS 보관 메타데이터 테이블을 만듭니다.
+`DATABASE_URL`을 개발 컴퓨터의 환경 변수 또는 `.env.local`에 설정한 뒤, 이 저장소에서 아래 명령을 실행합니다. 이 명령은 사용자·세션·확장 설치·방문 기록·정책·그래프 후보·GCS 보관 메타데이터 테이블을 만들고, 새 스키마 변경을 안전하게 적용합니다. 이후 새 버전에 데이터베이스 마이그레이션이 포함되면 같은 명령을 다시 실행하면 됩니다.
 
 ```bash
 npm ci
@@ -138,7 +138,7 @@ npm run db:migrate
 | Neon | `DATABASE_URL`을 안전하게 보관했고 Vercel Production에 등록했습니다. |
 | GCS | 비공개 버킷, Public Access Prevention, 전용 서비스 계정, 버킷 수준 최소 권한을 구성했습니다. |
 | Google OAuth | 운영 도메인의 `/api/auth/callback`을 정확히 등록했고 Client ID/Secret을 Vercel에 넣었습니다. |
-| PostgreSQL 스키마 | `DATABASE_URL`을 설정한 환경에서 `npm run db:migrate`를 한 번 실행했습니다. |
+| PostgreSQL 스키마 | `DATABASE_URL`을 설정한 환경에서 `npm run db:migrate`를 실행해 최신 마이그레이션을 적용했습니다. |
 | Vercel | 표의 필수 환경 변수를 Production에 등록했고, 비밀값을 소스 코드에 넣지 않았습니다. |
 | 비용 보호 | Google Cloud Billing 예산 알림을 활성화했고 Neon 사용량 화면을 확인할 수 있습니다. |
 | 배포 | 환경 변수 등록 뒤 Vercel에서 새 Production 배포를 실행합니다.[9] |

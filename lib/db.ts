@@ -15,15 +15,21 @@ export function database() {
 
 export async function runInitialMigration() {
   const sql = database();
-  const migrationPath = path.join(process.cwd(), 'db', 'migrations', '001_multi_user_unconscious.sql');
-  const source = await fs.readFile(migrationPath, 'utf8');
-  const statements = source
-    .replace(/^--.*$/gm, '')
-    .split(/;\s*(?:\r?\n|$)/)
-    .map((statement) => statement.trim())
-    .filter(Boolean);
+  const migrationsDir = path.join(process.cwd(), 'db', 'migrations');
+  const migrationFiles = (await fs.readdir(migrationsDir))
+    .filter((file) => /^\d+_.*\.sql$/.test(file))
+    .sort((left, right) => left.localeCompare(right));
 
-  for (const statement of statements) {
-    await sql.query(statement, []);
+  for (const migrationFile of migrationFiles) {
+    const source = await fs.readFile(path.join(migrationsDir, migrationFile), 'utf8');
+    const statements = source
+      .replace(/^--.*$/gm, '')
+      .split(/;\s*(?:\r?\n|$)/)
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+
+    for (const statement of statements) {
+      await sql.query(statement, []);
+    }
   }
 }

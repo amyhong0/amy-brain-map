@@ -73,3 +73,48 @@ describe('runUnconsciousQuery', () => {
     expect(result.trace.find((entry) => entry.agent === '질문 해석자')?.summary).toContain('반복 관심 탐색');
   });
 });
+
+
+describe('time-flow and web-search states', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = '';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('answers peak-activity questions from dated visit signals rather than matching question words', async () => {
+    const strongestDay = visit({
+      id: 'visit-peak-day',
+      normalizedUrl: 'https://example.com/project-review',
+      url: 'https://example.com/project-review',
+      title: '프로젝트 검토 노트',
+      domain: 'example.com',
+      visitCount: 9,
+      lastVisitTime: now - 24 * 60 * 60 * 1000,
+    });
+    const quieterDay = visit({
+      id: 'visit-quiet-day',
+      normalizedUrl: 'https://example.com/reference',
+      url: 'https://example.com/reference',
+      title: '참고 자료',
+      domain: 'example.com',
+      visitCount: 2,
+      lastVisitTime: now,
+    });
+
+    const result = await runUnconsciousQuery('이 관심이 가장 활발했던 시점은 언제야?', [strongestDay, quieterDay], [], false);
+
+    expect(result.answer).toContain('가장 활발했던 시점');
+    expect(result.answer).toContain('프로젝트 검토 노트');
+    expect(result.answer).not.toContain('직접 맞는 방문 흔적을 찾지 못했습니다');
+    expect(result.trace.find((entry) => entry.agent === '질문 해석자')?.summary).toContain('활동 시점 탐색');
+  });
+
+  it('returns explicit web-search request state when external search is not configured', async () => {
+    const result = await runUnconsciousQuery('개인 기록에 없는 새로운 주제', [], [], true);
+
+    expect(result.webSearchRequested).toBe(true);
+    expect(result.webSearchAttempted).toBe(true);
+    expect(result.webSearchConfigured).toBe(false);
+    expect(result.webSearchUsed).toBe(false);
+  });
+});

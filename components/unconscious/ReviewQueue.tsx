@@ -17,7 +17,7 @@ export function candidateReviewCopy(candidate: DiscoveryCandidate): CandidateRev
       category: '반복 관심 검토',
       title: `“${subject}” 관련 탐색이 ${object}에서 반복된 것으로 감지되었습니다.`,
       question: `“${subject}”을(를) 내 지도에 반복 관심으로 남길까요?`,
-      mapEffect: `지도에서 “${subject}” 관심 노드가 확인된 패턴으로 확정됩니다. “${object}”는 이 노드를 뒷받침하는 탐색 도메인이며, 새 연결선은 추가되지 않습니다.`,
+      mapEffect: `“${subject}” 관심이 확인된 반복 패턴으로 표시됩니다.`,
     };
   }
 

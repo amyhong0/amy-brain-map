@@ -27,7 +27,7 @@ const SEMANTIC_QUERY_HINTS: Record<string, string[]> = {
 };
 
 const QUERY_STOP_WORDS = new Set([
-  '내가', '내', '것', '중', '관련', '관련된', '뭐', '뭐더라', '무엇', '뭐야', '언제', '언제야', '어제', '오늘', '최근', '지난', '이번', '일주일', '동안', '본', '봤', '보았', '열어본', '읽은', '찾아', '알려', '질문', '콘텐츠', '내용', '대해', '에서', '으로', '그리고', '있는', '없는', '주제', '관심', '반복', '반복해서', '자주', '흐름', '연결', '가장', '활발', '활발했', '활발했던', '시점', '때', '기간', 'the', 'and', 'what', 'did', 'i', 'see',
+  '내가', '내', '것', '중', '관련', '관련해서', '관련한', '관련된', '뭐', '뭐더라', '무엇', '뭐야', '언제', '언제야', '어제', '오늘', '최근', '지난', '이번', '일주일', '동안', '본', '봤', '보았', '열어본', '읽은', '찾아', '알려', '알려줘', '질문', '페이지', '콘텐츠', '내용', '대해', '에서', '으로', '그리고', '있는', '없는', '주제', '관심', '반복', '반복해서', '자주', '흐름', '연결', '가장', '활발', '활발했', '활발했던', '시점', '때', '기간', 'the', 'and', 'what', 'did', 'i', 'see',
 ]);
 
 function koreanDayStart(dayOffset = 0) {
@@ -82,6 +82,21 @@ function scoreVisit(visit: BrowserVisit, intent: QueryIntent): ScoredVisit | nul
   const score = queryScore + recurrenceScore + recencyScore;
   if (intent.terms.length > 0 && matchedTerms.length === 0) return null;
   return { visit, score };
+}
+
+function isPersonalHistoryQuestion(message: string) {
+  return /(내\s*(가|의|기록)?|내가|기록|방문|열어|봤|본\s*것|살펴|탐색|반복|자주|활발|관심사|관심|연결)/.test(message.toLocaleLowerCase('ko-KR'));
+}
+
+function hasSufficientPrivateEvidence(message: string, intent: QueryIntent, visits: ScoredVisit[]) {
+  if (visits.length === 0 || !isPersonalHistoryQuestion(message)) return false;
+  if (intent.mode === 'recurring_topics' || intent.mode === 'connections' || intent.mode === 'peak_activity') return true;
+  if (intent.terms.length === 0) return false;
+  return visits.some(({ visit }) => {
+    const searchable = `${visit.title} ${visit.domain} ${visit.normalizedUrl}`.toLocaleLowerCase('ko-KR');
+    const coverage = intent.terms.filter((term) => matchesQueryTerm(searchable, term)).length / intent.terms.length;
+    return coverage >= (intent.terms.length === 1 ? 1 : 0.67);
+  });
 }
 
 function rankVisits(visits: BrowserVisit[], intent: QueryIntent, limit = 8) {
@@ -256,34 +271,36 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
     Promise.resolve(rankVisits(visits, intent, intent.mode === 'peak_activity' ? 250 : 8)),
     Promise.resolve(rankCandidates(candidates, intent, [])),
   ]);
-  trace.push({ agent: '기억 탐색자', status: 'completed', summary: `${retrieved.length}개의 방문 흔적을 시간·키워드·재방문 신호로 선별했습니다.` });
+  const usePrivateEvidence = hasSufficientPrivateEvidence(message, intent, retrieved);
+  const evidenceVisits = usePrivateEvidence ? retrieved : [];
+  trace.push({ agent: '기억 탐색자', status: usePrivateEvidence ? 'completed' : 'fallback', summary: usePrivateEvidence ? `${evidenceVisits.length}개의 방문 흔적을 시간·키워드·재방문 신호로 선별했습니다.` : (retrieved.length > 0 ? '제목의 일부 단어만 겹치는 방문 기록은 질문 근거로 사용하지 않았습니다.' : '질문과 직접 맞는 방문 흔적을 찾지 못했습니다.') });
   trace.push({ agent: '시간 해석자', status: 'completed', summary: intent.period ? `${intent.period.label}의 KST 날짜 경계를 적용했습니다.` : '기간 제한 없이 최근성과 반복 신호를 함께 고려했습니다.' });
 
-  const webSearchAttempted = webSearchEnabled && retrieved.length === 0;
+  const webSearchAttempted = webSearchEnabled && !usePrivateEvidence;
   const webSearch = webSearchAttempted ? await searchWebForAnswer(message) : { configured: Boolean(process.env.TAVILY_API_KEY), sources: [] as WebSearchSource[] };
-  if (webSearchEnabled && retrieved.length === 0) {
+  if (webSearchAttempted) {
     const hasWebEvidence = webSearch.sources.length > 0 || Boolean(webSearch.answer);
-    trace.push({ agent: '웹 정찰자', status: hasWebEvidence ? 'completed' : 'fallback', summary: hasWebEvidence ? `개인 기록에 없는 주제로 신뢰도 기준을 통과한 웹 근거 ${webSearch.sources.length}개를 확보했습니다.` : (webSearch.configured ? '웹 검색 결과를 찾지 못했습니다.' : 'TAVILY_API_KEY가 설정되지 않아 웹 검색을 건너뛰었습니다.') });
+    trace.push({ agent: '웹 정찰자', status: hasWebEvidence ? 'completed' : 'fallback', summary: hasWebEvidence ? `개인 기록에 직접 근거가 없는 주제로 신뢰도 기준을 통과한 웹 근거 ${webSearch.sources.length}개를 확보했습니다.` : (webSearch.configured ? '웹 검색 결과를 찾지 못했습니다.' : 'TAVILY_API_KEY가 설정되지 않아 웹 검색을 건너뛰었습니다.') });
   } else if (webSearchEnabled) {
     trace.push({ agent: '웹 정찰자', status: 'completed', summary: '개인 방문 기록에서 충분한 근거를 찾아 웹 검색을 호출하지 않았습니다.' });
   }
 
   // A2A handoff: the relationship verifier receives the retrieval agent's exact evidence IDs,
   // then only returns graph candidates that agree with those primary records.
-  const retrievedIds = new Set(retrieved.map(({ visit }) => visit.id));
-  const retrievedDomains = new Set(retrieved.map(({ visit }) => visit.domain));
-  const verifiedRelationships = retrieved.length > 0
-    ? rankCandidates(candidates, intent, retrieved).filter(({ candidate }) => candidate.sourceVisitIds.some((id) => retrievedIds.has(id)) || candidate.sourceDomains.some((domain) => retrievedDomains.has(domain)))
+  const retrievedIds = new Set(evidenceVisits.map(({ visit }) => visit.id));
+  const retrievedDomains = new Set(evidenceVisits.map(({ visit }) => visit.domain));
+  const verifiedRelationships = evidenceVisits.length > 0
+    ? rankCandidates(candidates, intent, evidenceVisits).filter(({ candidate }) => candidate.sourceVisitIds.some((id) => retrievedIds.has(id)) || candidate.sourceDomains.some((domain) => retrievedDomains.has(domain)))
     : [];
   trace.push({ agent: '관계 검증자', status: 'completed', summary: `${preliminaryRelationships.length}개 1차 관계 중 방문 출처와 교차 확인된 ${verifiedRelationships.length}개만 지도 후보로 채택했습니다.` });
 
   const highlightedCandidateIds = verifiedRelationships.map(({ candidate }) => candidate.id);
-  const highlightedVisitIds = retrieved.map(({ visit }) => visit.id);
+  const highlightedVisitIds = evidenceVisits.map(({ visit }) => visit.id);
   trace.push({ agent: '지도 항해자', status: 'completed', summary: `관련 관심 축 ${highlightedCandidateIds.length}개와 근거 방문 ${highlightedVisitIds.length}개를 강조하도록 전달했습니다.` });
 
-  let answer = fallbackResponse(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer);
+  let answer = fallbackResponse(message, intent, evidenceVisits, verifiedRelationships, webSearch.sources, webSearch.answer);
   try {
-    const modelAnswer = await composeWithModel(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer, webSearchEnabled);
+    const modelAnswer = await composeWithModel(message, intent, evidenceVisits, verifiedRelationships, webSearch.sources, webSearch.answer, webSearchEnabled);
     if (modelAnswer) answer = modelAnswer;
     trace.push({ agent: '응답 구성자', status: modelAnswer ? 'completed' : 'fallback', summary: modelAnswer ? '검증된 컨텍스트만 사용해 답변을 구성했습니다.' : '모델 응답 없이 근거 기반 요약으로 답변했습니다.' });
   } catch {
@@ -293,7 +310,7 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
   return {
     answer,
     intent,
-    matchedVisits: retrieved.map(({ visit, score }) => ({ id: visit.id, domain: visit.domain, title: visit.title, lastVisitTime: visit.lastVisitTime, visitCount: visit.visitCount, score: Number(score.toFixed(2)) })),
+    matchedVisits: evidenceVisits.map(({ visit, score }) => ({ id: visit.id, domain: visit.domain, title: visit.title, lastVisitTime: visit.lastVisitTime, visitCount: visit.visitCount, score: Number(score.toFixed(2)) })),
     matchedCandidates: verifiedRelationships.map(({ candidate, score }) => ({ ...candidate, score: Number(score.toFixed(2)) })),
     highlightedCandidateIds,
     highlightedVisitIds,

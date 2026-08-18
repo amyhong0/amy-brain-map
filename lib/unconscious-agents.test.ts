@@ -191,3 +191,46 @@ describe('private-history summaries and map grounding', () => {
     expect(result.highlightedCandidateIds).toEqual(['candidate-openai-academy']);
   });
 });
+
+
+describe('web search relevance gate', () => {
+  beforeEach(() => {
+    process.env.NVIDIA_API_KEY = '';
+    process.env.TAVILY_API_KEY = '';
+  });
+
+  it('does not treat a partial title-word match as private evidence for a general web question', async () => {
+    const unrelatedSelfHelp = visit({
+      id: 'visit-self-help',
+      normalizedUrl: 'https://tnp.company/program',
+      url: 'https://tnp.company/program',
+      title: '튠앤피치 | 나만의 리듬으로 성장하는 여성 자기계발 프로그램',
+      domain: 'tnp.company',
+      visitCount: 19,
+    });
+    const unrelatedNews = visit({
+      id: 'visit-news',
+      normalizedUrl: 'https://ardentnews.co.kr/article',
+      url: 'https://ardentnews.co.kr/article',
+      title: '자기계발을 위한 일상 습관',
+      domain: 'ardentnews.co.kr',
+      visitCount: 2,
+    });
+
+    const result = await runUnconsciousQuery('자기 전 탱크에 뭘 넣어야 해?', [unrelatedSelfHelp, unrelatedNews], [], true);
+
+    expect(result.matchedVisits).toHaveLength(0);
+    expect(result.highlightedCandidateIds).toHaveLength(0);
+    expect(result.webSearchRequested).toBe(true);
+    expect(result.webSearchAttempted).toBe(true);
+    expect(result.trace.find((entry) => entry.agent === '기억 탐색자')?.summary).toContain('일부 단어만 겹치는');
+  });
+
+  it('keeps web search off when a personal-history question has strong page evidence', async () => {
+    const result = await runUnconsciousQuery('내가 본 AI 콘텐츠 제작 관련 페이지를 알려줘', [visit()], [candidate()], true);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.webSearchAttempted).toBe(false);
+    expect(result.highlightedCandidateIds).toEqual(['candidate-ai-1']);
+  });
+});

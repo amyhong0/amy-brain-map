@@ -149,7 +149,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
     const weight = Math.max(1, cluster.memberIds.size);
     const desiredRadius = weight === 1
       ? nodeRadius(rootNode, degrees.get(rootNode.id) || 0) + 16
-      : Math.max(104, Math.min(162, 42 + Math.sqrt(weight) * 38));
+      : Math.max(142, Math.min(230, 52 + Math.sqrt(weight) * 56));
     const angle = -Math.PI / 2 + (clusterIndex - 1) * goldenAngle;
     const leadRadius = clusterIndex === 0 ? 0 : clusterRadiusById.get(clusters[0].id)!;
     const centerDistance = clusterIndex === 0
@@ -170,11 +170,11 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || leftId.localeCompare(rightId));
       if (children.length === 0) continue;
       const currentPoint = positions.get(current.id)!;
-      const childSpan = children.length === 1 ? 0 : current.depth === 0 ? Math.min(Math.PI * 1.85, Math.PI / 1.3 + children.length * 0.28) : Math.min(Math.PI * 0.92, Math.max(Math.PI / 8, current.span * 0.72));
+      const childSpan = children.length === 1 ? 0 : current.depth === 0 ? Math.min(Math.PI * 1.95, Math.PI + children.length * 0.34) : Math.min(Math.PI * 1.04, Math.max(Math.PI / 7, current.span * 0.76));
       const startAngle = current.angle - childSpan * (children.length - 1) / 2;
       children.forEach(([childId], index) => {
         const childAngle = startAngle + childSpan * index;
-        const distance = current.depth === 0 ? Math.min(116, Math.max(70, desiredRadius * 0.75)) : Math.min(78, Math.max(50, desiredRadius * 0.52));
+        const distance = current.depth === 0 ? Math.min(164, Math.max(92, desiredRadius * 0.76)) : Math.min(104, Math.max(66, desiredRadius * 0.54));
         const rawPoint = { x: currentPoint.x + Math.cos(childAngle) * distance, y: currentPoint.y + Math.sin(childAngle) * distance };
         const dx = rawPoint.x - clusterCenter.x;
         const dy = rawPoint.y - clusterCenter.y;
@@ -353,8 +353,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       .map((node) => node.id));
   }, [nodes, highlightedVisitKey]);
 
-  const width = 680;
-  const height = 680;
+  const width = 860;
+  const height = 860;
   const globeRadius = Math.min(width, height) * 0.43;
   const degrees = useMemo(() => {
     const next = new Map(nodes.map((node) => [node.id, 0]));
@@ -401,7 +401,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         </div>
       </div>
 
-      <div className="aether-map-stage relative min-h-[520px] p-3 md:p-5">
+      <div className="aether-map-stage relative min-h-[615px] p-3 md:p-5">
         {nodes.length === 0 ? (
           <div className="flex min-h-[410px] flex-col items-center justify-center px-5 text-center">
             <div className="grid h-16 w-16 place-items-center rounded-3xl bg-blue-50 text-blue-600"><CircleDot className="h-7 w-7" aria-hidden="true" /></div>
@@ -410,7 +410,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           </div>
         ) : (
           <>
-            <svg viewBox={`0 0 ${width} ${height}`} className="h-[500px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
+            <svg viewBox={`0 0 ${width} ${height}`} className="h-[590px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
               <desc id="map-description">둥근 지도 안에 여러 관심 군집이 채워져 있습니다. 각 군집은 실제로 함께 살펴본 관심을 중심과 가지 형태로 연결하며, 청록색 테두리는 현재 질문과 관련된 기존 관심 축입니다.</desc>
               <defs>

@@ -21,7 +21,7 @@ interface UnconsciousMapProps {
 }
 
 type CandidateStatus = DiscoveryCandidate['status'];
-type EdgeKind = 'journey' | 'cooccurrence' | 'shared-domain';
+type EdgeKind = 'related';
 
 interface MapNode {
   id: string;
@@ -60,7 +60,6 @@ interface TopicCluster {
 
 interface ClusterMindMapLayout {
   positions: Map<string, MapPoint>;
-  clusterRootIds: Set<string>;
   clusterByNode: Map<string, TopicCluster>;
   clusters: TopicCluster[];
 }
@@ -81,10 +80,8 @@ const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = 
   rejected: { label: '제외됨', color: '#65718a' },
 };
 
-const EDGE_STYLE: Record<EdgeKind, { label: string; color: string; dash?: string }> = {
-  journey: { label: '같은 탐색 흐름', color: '#9db5ff' },
-  cooccurrence: { label: '같은 페이지에서 함께 나타남', color: '#8f6bd1', dash: '4 5' },
-  'shared-domain': { label: '같은 도메인에서 반복 탐색', color: '#65718a', dash: '2 7' },
+const EDGE_STYLE: Record<EdgeKind, { label: string }> = {
+  related: { label: '함께 살펴본 관심' },
 };
 
 function nodeRadius(node: MapNode, degree = 0) {
@@ -97,7 +94,7 @@ function nodeImportance(node: MapNode, degree: number) {
 }
 
 function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees: Map<string, number>, width: number, height: number): ClusterMindMapLayout {
-  if (nodes.length === 0) return { positions: new Map(), clusterRootIds: new Set(), clusterByNode: new Map(), clusters: [] };
+  if (nodes.length === 0) return { positions: new Map(), clusterByNode: new Map(), clusters: [] };
   const minX = 64;
   const maxX = width - 64;
   const minY = 58;
@@ -139,39 +136,20 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const clusterByNode = new Map<string, TopicCluster>();
   for (const cluster of clusters) for (const nodeId of cluster.memberIds) clusterByNode.set(nodeId, cluster);
 
-  const columns = clusters.length <= 2 ? clusters.length : Math.min(3, Math.ceil(Math.sqrt(clusters.length)));
-  const rows = Math.max(1, Math.ceil(clusters.length / Math.max(1, columns)));
-  const cellWidth = width / Math.max(1, columns);
-  const cellHeight = height / rows;
   const positions = new Map<string, MapPoint>();
   const fixedRootIds = new Set<string>();
-
-  clusters.forEach((cluster, clusterIndex) => {
-    const column = clusterIndex % columns;
-    const row = Math.floor(clusterIndex / columns);
-    const center = clamp({ x: cellWidth * (column + 0.5), y: cellHeight * (row + 0.5) });
-    positions.set(cluster.rootId, center);
-    fixedRootIds.add(cluster.rootId);
-    const placed = new Set<string>([cluster.rootId]);
-    const queue: Array<{ id: string; depth: number; angle: number; span: number }> = [{ id: cluster.rootId, depth: 0, angle: -Math.PI / 2, span: Math.PI * 1.35 }];
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const children = [...(adjacency.get(current.id)?.entries() || [])]
-        .filter(([id]) => cluster.memberIds.has(id) && !placed.has(id))
-        .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || leftId.localeCompare(rightId));
-      if (children.length === 0) continue;
-      const currentPoint = positions.get(current.id)!;
-      const childSpan = children.length === 1 ? 0 : current.depth === 0 ? Math.min(Math.PI * 1.4, Math.PI / 2 + children.length * 0.16) : Math.min(Math.PI * 0.85, Math.max(Math.PI / 7, current.span * 0.76));
-      const startAngle = current.angle - childSpan * (children.length - 1) / 2;
-      children.forEach(([childId], index) => {
-        const angle = startAngle + childSpan * index;
-        const distance = current.depth === 0 ? Math.min(118, Math.max(82, Math.min(cellWidth, cellHeight) * 0.4)) : Math.min(82, Math.max(62, Math.min(cellWidth, cellHeight) * 0.28));
-        const point = clamp({ x: currentPoint.x + Math.cos(angle) * distance, y: currentPoint.y + Math.sin(angle) * distance * 0.7 });
-        positions.set(childId, point);
-        placed.add(childId);
-        queue.push({ id: childId, depth: current.depth + 1, angle, span: Math.max(Math.PI / 8, childSpan / Math.max(1, children.length)) });
-      });
-    }
+  const orderedNodes = clusters.flatMap((cluster) => {
+    const members = [...cluster.memberIds]
+      .map((id) => nodesById.get(id)!)
+      .filter((node) => node.id !== cluster.rootId)
+      .sort((left, right) => nodeImportance(right, degrees.get(right.id) || 0) - nodeImportance(left, degrees.get(left.id) || 0) || left.label.localeCompare(right.label, 'ko-KR'));
+    return [nodesById.get(cluster.rootId)!, ...members];
+  });
+  const center = { x: width / 2, y: height / 2 };
+  const ringRadius = Math.min(height * 0.38, width * 0.28, 205);
+  orderedNodes.forEach((node, index) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(1, orderedNodes.length);
+    positions.set(node.id, clamp({ x: center.x + Math.cos(angle) * ringRadius, y: center.y + Math.sin(angle) * ringRadius }));
   });
 
   const points = nodes.map((node) => ({ ...positions.get(node.id)! }));
@@ -201,7 +179,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
     if (moved < 0.08) break;
   }
 
-  return { positions: new Map(nodes.map((node, index) => [node.id, points[index]])), clusterRootIds: new Set(clusters.map((cluster) => cluster.rootId)), clusterByNode, clusters };
+  return { positions: new Map(nodes.map((node, index) => [node.id, points[index]])), clusterByNode, clusters };
 }
 
 function canonicalPair(left: string, right: string) {
@@ -286,8 +264,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     const addEdge = (edge: MapEdge) => {
       const key = canonicalPair(edge.source, edge.target);
       const existing = edgesByPair.get(key);
-      const priority: Record<EdgeKind, number> = { journey: 3, cooccurrence: 2, 'shared-domain': 1 };
-      if (!existing || priority[edge.kind] > priority[existing.kind] || edge.score > existing.score) {
+      if (!existing || edge.score > existing.score) {
         edgesByPair.set(key, edge);
       } else if (existing) {
         existing.candidateIds = [...new Set([...existing.candidateIds, ...edge.candidateIds])];
@@ -299,7 +276,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       const source = topicNodeId(candidate.subject);
       const target = topicNodeId(candidate.object);
       if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) continue;
-      addEdge({ id: `journey:${candidate.id}`, source, target, kind: 'journey', score: candidate.confidence, candidateIds: [candidate.id] });
+      addEdge({ id: `related:${candidate.id}`, source, target, kind: 'related', score: candidate.confidence, candidateIds: [candidate.id] });
     }
 
     const interests = visible.filter((candidate) => candidate.kind !== 'bridge' && nodeIds.has(topicNodeId(candidate.subject)));
@@ -309,17 +286,15 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         const right = interests[otherIndex];
         if (left.subject === right.subject) continue;
         const sharedVisits = hasOverlap(left.sourceVisitIds, right.sourceVisitIds);
-        const sharedDomains = hasOverlap(left.sourceDomains, right.sourceDomains);
-        if (sharedVisits.length === 0 && sharedDomains.length === 0) continue;
+        if (sharedVisits.length === 0) continue;
         const source = topicNodeId(left.subject);
         const target = topicNodeId(right.subject);
-        const kind: EdgeKind = sharedVisits.length > 0 ? 'cooccurrence' : 'shared-domain';
-        const score = Math.min(0.78, Math.max(left.confidence, right.confidence) * 0.8 + (sharedVisits.length > 0 ? 0.14 : 0.06));
-        addEdge({ id: `${kind}:${left.id}:${right.id}`, source, target, kind, score, candidateIds: [left.id, right.id] });
+        const score = Math.min(0.82, Math.max(left.confidence, right.confidence) * 0.8 + Math.min(0.18, sharedVisits.length * 0.06));
+        addEdge({ id: `related:${left.id}:${right.id}`, source, target, kind: 'related', score, candidateIds: [left.id, right.id] });
       }
     }
 
-    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 28) };
+    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 20) };
   }, [candidates, view]);
 
   const evidenceRelatedNodeIds = useMemo(() => {
@@ -343,7 +318,6 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   }, [nodes, edges]);
   const clusterMindMapLayout = useMemo(() => resolveClusterMindMapLayout(nodes, edges, degrees, width, height), [nodes, edges, degrees]);
   const positions = clusterMindMapLayout.positions;
-  const clusterRootIds = clusterMindMapLayout.clusterRootIds;
   const clusterByNode = clusterMindMapLayout.clusterByNode;
   const clusters = clusterMindMapLayout.clusters;
   const hasHighlightedNodes = highlighted.size > 0 || evidenceRelatedNodeIds.size > 0;
@@ -370,7 +344,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-200">Cognitive graph</p>
             <h2 className="mt-1 text-lg font-extrabold text-slate-950">관심 군집 마인드맵</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">각 군집의 가운데는 연결과 반복이 가장 높은 메인 주제이며, 실제 탐색 근거가 있는 관심이 가지처럼 이어집니다.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">같은 색의 원은 하나의 관심 군집이며, 선은 실제로 함께 살펴본 관심 사이의 연결입니다.</p>
           </div>
         </div>
         <div className="aether-map-tab-shell inline-flex rounded-xl border p-1" aria-label="지도 보기 범위">
@@ -391,27 +365,24 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           <>
             <svg viewBox={`0 0 ${width} ${height}`} className="h-[430px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
-              <desc id="map-description">각 색상 군집의 가운데 노드는 반복 탐색과 연결이 가장 높은 메인 주제입니다. 같은 색의 바깥 노드는 실제 탐색 근거로 이어진 관심 가지를 나타냅니다. 청록색 테두리는 현재 질문과 관련된 기존 관심 축입니다.</desc>
+              <desc id="map-description">같은 색의 원은 하나의 관심 군집을 나타냅니다. 선은 실제로 함께 살펴본 관심 사이의 연결이며, 청록색 테두리는 현재 질문과 관련된 기존 관심 축입니다.</desc>
               <defs>
                 <pattern id="dotGrid" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#9db5ff" opacity=".24" /></pattern>
-                <radialGradient id="mapCenter" cx="50%" cy="46%" r="52%"><stop offset="0%" stopColor="#4b67a0" stopOpacity=".34" /><stop offset="65%" stopColor="#101114" stopOpacity=".2" /><stop offset="100%" stopColor="#050506" stopOpacity="0" /></radialGradient>
                 <filter id="nodeGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
               </defs>
               <rect width={width} height={height} fill="url(#dotGrid)" opacity=".52" />
-              <rect width={width} height={height} fill="url(#mapCenter)" />
               {pointer && <circle cx={pointer.x} cy={pointer.y} r="38" fill="none" stroke="#6ee7ff" strokeOpacity=".18" strokeWidth="1.5" pointerEvents="none" />}
               {edges.map((edge) => {
                 const source = positions.get(edge.source);
                 const target = positions.get(edge.target);
                 if (!source || !target) return null;
                 const isActive = edge.candidateIds.includes(selectedId || '') || edge.candidateIds.some((id) => highlighted.has(id)) || evidenceRelatedNodeIds.has(edge.source) || evidenceRelatedNodeIds.has(edge.target);
-                const style = EDGE_STYLE[edge.kind];
                 const sourceCluster = clusterByNode.get(edge.source);
                 const targetCluster = clusterByNode.get(edge.target);
-                const clusterStroke = sourceCluster && sourceCluster === targetCluster ? sourceCluster.color.stroke : style.color;
+                const clusterStroke = sourceCluster && sourceCluster === targetCluster ? sourceCluster.color.stroke : '#9db5ff';
                 const sourceSway = reedSway(source, pointer);
                 const targetSway = reedSway(target, pointer);
-                return <line key={edge.id} x1={source.x + sourceSway.x} y1={source.y + sourceSway.y} x2={target.x + targetSway.x} y2={target.y + targetSway.y} stroke={isActive ? '#6ee7ff' : clusterStroke} strokeOpacity={isActive ? .98 : hasHighlightedNodes ? .18 : .68} strokeWidth={isActive ? 4 : Math.max(1.25, edge.score * 2.35)} strokeDasharray={isActive ? undefined : style.dash} />;
+                return <line key={edge.id} x1={source.x + sourceSway.x} y1={source.y + sourceSway.y} x2={target.x + targetSway.x} y2={target.y + targetSway.y} stroke={isActive ? '#6ee7ff' : clusterStroke} strokeOpacity={isActive ? .98 : hasHighlightedNodes ? .18 : .62} strokeWidth={isActive ? 4 : Math.max(1.35, edge.score * 2.45)} />;
               })}
               {nodes.map((node) => {
                 const point = positions.get(node.id)!;
@@ -422,9 +393,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                 const isDimmed = hasHighlightedNodes && !isFocused;
                 const degree = degrees.get(node.id) || 0;
                 const cluster = clusterByNode.get(node.id);
-                const isClusterRoot = clusterRootIds.has(node.id);
                 const baseRadius = nodeRadius(node, degree);
-                const radius = baseRadius + (isClusterRoot ? 6 : 0) + (isHighlighted ? 5 : 0);
+                const radius = baseRadius + (isHighlighted ? 5 : 0);
                 const status = statusFor(node);
                 const color = isHighlighted ? '#6ee7ff' : isSelected ? '#ffffff' : cluster?.color.stroke || STATUS_STYLE[status].color;
                 const labelLimit = 12;
@@ -447,17 +417,16 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                       transition: 'transform 190ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease',
                     }}
                   >
-                    {isClusterRoot && !isHighlighted && <circle cx={point.x} cy={point.y} r={radius + 18} fill="none" stroke={cluster?.color.stroke || '#a78bfa'} strokeOpacity=".68" strokeWidth="1.8" strokeDasharray="4 6" />}
                     {isHighlighted && <circle cx={point.x} cy={point.y} r={radius + 17} fill="none" stroke="#6ee7ff" strokeOpacity=".72" strokeWidth="1.5" strokeDasharray="3 5" />}
-                    <circle cx={point.x} cy={point.y} r={radius + 12 + sway.strength * 5} fill={cluster?.color.glow || color} opacity={isFocused || isClusterRoot ? .34 : .1} filter="url(#nodeGlow)" />
-                    <circle cx={point.x} cy={point.y} r={radius} fill={isHighlighted ? '#102c42' : '#111319'} stroke={color} strokeWidth={isFocused ? 3.6 : 1.7} />
+                    <circle cx={point.x} cy={point.y} r={radius + 12 + sway.strength * 5} fill="#ffffff" opacity={isFocused ? .2 : .05} filter="url(#nodeGlow)" />
+                    <circle cx={point.x} cy={point.y} r={radius} fill={isHighlighted ? '#102c42' : cluster?.color.glow || '#111319'} fillOpacity={isHighlighted ? 1 : .27} stroke={color} strokeWidth={isFocused ? 3.6 : 1.9} />
                     <text x={point.x} y={point.y + 4} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="700" pointerEvents="none">{label}</text>
-                    <text x={point.x} y={point.y + radius + 17} textAnchor="middle" fill={isHighlighted ? '#9ff3ff' : cluster?.color.stroke || '#a9b0bf'} fontSize="9" fontWeight="600" pointerEvents="none">{isHighlighted ? '질문 관련' : isClusterRoot ? `메인 주제 · 연결 ${degree}개` : degree > 0 ? `연결 ${degree}개` : '단서 수집 중'}</text>
+                    <text x={point.x} y={point.y + radius + 17} textAnchor="middle" fill={isHighlighted ? '#9ff3ff' : cluster?.color.stroke || '#a9b0bf'} fontSize="9" fontWeight="600" pointerEvents="none">{isHighlighted ? '질문 관련' : degree > 0 ? `연결 ${degree}개` : '새 관심'}</text>
                   </g>
                 );
               })}
             </svg>
-            {edges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">현재는 노드 사이의 공통 탐색 근거가 충분하지 않아 독립적으로 보입니다. 같은 페이지·도메인·탐색 흐름이 더 쌓이면 관계선이 나타납니다.</p>}
+            {edges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}
           </>
         )}
       </div>
@@ -465,7 +434,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         {hasHighlightedNodes && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>현재 질문 관련 항목 · 빈 곳 또는 강조된 노드를 다시 클릭하면 해제</span></div>}
         {evidenceRelatedNodeIds.size > 0 && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full border border-cyan-200 bg-cyan-950 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>질문 근거와 이어진 관심 축</span></div>}
         {clusters.slice(0, 6).map((cluster) => <div className="flex items-center gap-2" key={cluster.id}><span className="h-2.5 w-2.5 rounded-full" style={{ background: cluster.color.stroke }} /><span>{cluster.rootLabel} 군집</span></div>)}
-        {Object.entries(EDGE_STYLE).map(([key, style]) => <div className="flex items-center gap-2" key={key}><span className="h-0 w-4 border-t-2" style={{ borderColor: style.color, borderStyle: style.dash ? 'dashed' : 'solid' }} /><span>{style.label}</span></div>)}
+        <div className="flex items-center gap-2"><span className="h-0 w-4 border-t-2 border-slate-400" /><span>{EDGE_STYLE.related.label}</span></div>
         <div className="ml-auto flex items-center gap-1.5 text-blue-700"><Focus className="h-3.5 w-3.5" aria-hidden="true" />관심 축 {nodes.length}개 · 주제 군집 {clusters.length}개 · 관계선 {edges.length}개</div>
       </div>
     </section>

@@ -2,7 +2,7 @@
 
 > **스쳐 지나간 웹페이지 속에서, 내 사고의 흐름을 발견하는 개인 인지 그래프 서비스**
 
-[Live Demo](https://amy-brain-map.vercel.app) · [Chrome Extension](./extension) · [Operator Guide](./docs/operator-setup-guide.md)
+[Live Demo](https://amy-brain-map.vercel.app) · [Chrome Extension](./extension)
 
 Amy Brain Map은 Chrome 방문 기록에 남은 **제목·도메인·방문 시각·방문 횟수**를 분석해, 사용자가 무심코 반복해서 살펴본 주제와 주제 사이의 연결을 시각화하는 서비스입니다. 단순한 방문 목록을 넘어 “어제 본 AI 콘텐츠 제작 자료가 무엇이었지?”, “Nvidia와 연결된 다른 관심은 무엇이야?”와 같은 자연어 질문에 개인 기록을 근거로 답하고, 근거가 된 노드와 연결선을 지도에서 바로 확인할 수 있게 설계했습니다.
 
@@ -170,7 +170,7 @@ flowchart TB
 
 ## 로컬 실행
 
-외부 서비스 설정이 필요한 프로젝트입니다. 데이터베이스, Google OAuth, GCS, AI API 관련 환경 변수는 [운영자 설정 가이드](./docs/operator-setup-guide.md)를 참고합니다.
+외부 서비스 설정이 필요한 프로젝트입니다. 데이터베이스, Google OAuth, GCS, AI API 관련 환경 변수는 `.env.example`을 기준으로 설정합니다.
 
 ```bash
 npm ci
@@ -198,7 +198,6 @@ lib/unconscious-auth.ts            # OAuth 세션·확장 설치 권한 검증
 lib/utils/unconscious-storage.ts   # 사용자별 PostgreSQL 저장소 계층
 lib/gcs-archive.ts                 # 암호화된 GCS 백업·내보내기
 db/migrations/                     # PostgreSQL 스키마 마이그레이션
-docs/                              # 운영과 아키텍처 문서
 ```
 
 ## 검증
@@ -209,13 +208,6 @@ npm run build
 ```
 
 현재 단위 테스트는 개인 기록 우선 탐색, 반복 관심, 시간 기반 질의, 웹 검색 경계, 인증 페이지 제외, 한국어·영어 동의어 연결, 저장소 중복 방지 등을 검증합니다. 배포 전에는 Next.js TypeScript 프로덕션 빌드를 실행합니다.
-
-## 운영 문서
-
-| 문서 | 설명 |
-|---|---|
-| [운영자 설정 가이드](./docs/operator-setup-guide.md) | Google OAuth, PostgreSQL, GCS, 환경 변수 설정 |
-| [다중 사용자 아키텍처 검토 메모](./docs/multi-user-feasibility-notes.md) | 계정 격리와 운영 구조 검토 |
 
 ## References
 

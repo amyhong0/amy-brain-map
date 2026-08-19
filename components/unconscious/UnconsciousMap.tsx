@@ -157,6 +157,20 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
     return { cluster, radius };
   });
+  const clusterIndexByNodeId = new Map<string, number>();
+  clusterGeometry.forEach(({ cluster }, index) => cluster.memberIds.forEach((nodeId) => clusterIndexByNodeId.set(nodeId, index)));
+  const clusterLinks = new Map<string, { leftIndex: number; rightIndex: number; score: number }>();
+  for (const edge of edges) {
+    const sourceIndex = clusterIndexByNodeId.get(edge.source);
+    const targetIndex = clusterIndexByNodeId.get(edge.target);
+    if (sourceIndex === undefined || targetIndex === undefined || sourceIndex === targetIndex) continue;
+    const leftIndex = Math.min(sourceIndex, targetIndex);
+    const rightIndex = Math.max(sourceIndex, targetIndex);
+    const key = `${leftIndex}:${rightIndex}`;
+    const existing = clusterLinks.get(key);
+    if (existing) existing.score += edge.score;
+    else clusterLinks.set(key, { leftIndex, rightIndex, score: edge.score });
+  }
   const clusterSeed = (value: string) => [...value].reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
   const clusterCenters = clusterGeometry.map(({ cluster }, index) => {
     if (index === 0) return { ...center };
@@ -184,6 +198,24 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         right.x += Math.cos(angle) * push * 0.5;
         right.y += Math.sin(angle) * push * 0.5;
       }
+    }
+
+    for (const link of clusterLinks.values()) {
+      const left = clusterCenters[link.leftIndex];
+      const right = clusterCenters[link.rightIndex];
+      const dx = right.x - left.x;
+      const dy = right.y - left.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 0.1) continue;
+      const minimumDistance = clusterGeometry[link.leftIndex].radius + clusterGeometry[link.rightIndex].radius + 26;
+      const targetDistance = minimumDistance + Math.max(8, 28 - Math.min(18, link.score * 10));
+      if (distance <= targetDistance) continue;
+      const pull = Math.min(6, (distance - targetDistance) * (0.025 + Math.min(0.035, link.score * 0.018)));
+      const angle = Math.atan2(dy, dx);
+      left.x += Math.cos(angle) * pull * 0.5;
+      left.y += Math.sin(angle) * pull * 0.5;
+      right.x -= Math.cos(angle) * pull * 0.5;
+      right.y -= Math.sin(angle) * pull * 0.5;
     }
 
     const centroid = clusterCenters.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });

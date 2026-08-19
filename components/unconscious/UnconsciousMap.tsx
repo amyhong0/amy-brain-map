@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
-import { CircleDot, Minus, Network, Plus, RotateCcw, Settings2, X } from 'lucide-react';
+import { CircleDot, Minus, Network, Plus, RotateCcw, Settings2, Trash2, X } from 'lucide-react';
 import { DiscoveryCandidate } from './types';
 
 interface HighlightedVisit {
@@ -18,6 +18,7 @@ interface UnconsciousMapProps {
   highlightedVisits?: HighlightedVisit[];
   onSelect: (candidate: DiscoveryCandidate, detail: MapNodeDetail) => void;
   onClearHighlights?: () => void;
+  onRequestRemove?: (detail: MapNodeDetail) => void;
 }
 
 type CandidateStatus = DiscoveryCandidate['status'];
@@ -406,7 +407,7 @@ function reedSway(point: MapPoint, pointer: MapPoint | null) {
   };
 }
 
-export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect, onClearHighlights }: UnconsciousMapProps) {
+export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect, onClearHighlights, onRequestRemove }: UnconsciousMapProps) {
   const [view, setView] = useState<'all' | 'pending' | 'confirmed'>('all');
   const [pointer, setPointer] = useState<MapPoint | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -525,6 +526,23 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const visibleNodes = showIsolated ? nodes : nodes.filter((node) => (degrees.get(node.id) || 0) > 0);
   const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
   const visibleEdges = edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
+  const detailForNode = (node: MapNode): MapNodeDetail => ({
+    id: node.id,
+    label: node.label,
+    confidence: node.confidence,
+    candidateCount: node.candidates.length,
+    candidates: node.candidates,
+    connections: edges.filter((edge) => edge.source === node.id || edge.target === node.id)
+      .map((edge) => ({ label: nodes.find((item) => item.id === (edge.source === node.id ? edge.target : edge.source))?.label || '알 수 없는 관심', score: edge.score }))
+      .sort((left, right) => right.score - left.score),
+  });
+  const selectedMapNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) || null : null;
+  const selectedNodeDetail = selectedMapNode ? detailForNode(selectedMapNode) : null;
+  const selectedNodePoint = selectedMapNode ? positions.get(selectedMapNode.id) || null : null;
+  const popoverWidth = 266;
+  const popoverHeight = 276;
+  const popoverX = selectedNodePoint ? (selectedNodePoint.x > width - popoverWidth - 30 ? selectedNodePoint.x - popoverWidth - 18 : selectedNodePoint.x + 18) : 0;
+  const popoverY = selectedNodePoint ? Math.max(14, Math.min(height - popoverHeight - 14, selectedNodePoint.y - 70)) : 0;
 
   const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>): MapPoint | null => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -668,16 +686,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                   const labelLimit = 18;
                   const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
                   const sway = reedSway(point, pointer);
-                  const detail: MapNodeDetail = {
-                    id: node.id,
-                    label: node.label,
-                    confidence: node.confidence,
-                    candidateCount: node.candidates.length,
-                    candidates: node.candidates,
-                    connections: edges.filter((edge) => edge.source === node.id || edge.target === node.id)
-                      .map((edge) => ({ label: nodes.find((item) => item.id === (edge.source === node.id ? edge.target : edge.source))?.label || '알 수 없는 관심', score: edge.score }))
-                      .sort((left, right) => right.score - left.score),
-                  };
+                  const detail = detailForNode(node);
                   return (
                     <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 정보 열기`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (candidate) onSelect(candidate, detail); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (candidate) onSelect(candidate, detail); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
                       <circle cx={point.x} cy={point.y} r={Math.max(radius + 7, 15)} fill="transparent" pointerEvents="all" />
@@ -687,6 +696,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     </g>
                   );
                 })}
+                {selectedNodeDetail && selectedNodePoint && <foreignObject x={popoverX} y={popoverY} width={popoverWidth} height={popoverHeight} pointerEvents="all"><div role="dialog" aria-label={`${selectedNodeDetail.label} 상세 정보`} onClick={(event) => event.stopPropagation()} className="rounded-2xl border border-slate-200 bg-slate-950/95 p-3.5 text-slate-100 shadow-2xl shadow-black/45 backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[9px] font-extrabold tracking-[0.15em] text-blue-300">NODE DETAIL</p><h3 className="mt-1 truncate text-sm font-extrabold text-white">{selectedNodeDetail.label}</h3></div><button type="button" onClick={() => onClearHighlights?.()} aria-label={`${selectedNodeDetail.label} 상세 정보 닫기`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">상태</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.candidates.some((candidate) => candidate.status === 'approved' || candidate.status === 'auto_applied') ? '반영됨' : '검토'}</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">연결</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.connections.length}개</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">신뢰도</p><p className="mt-0.5 text-[10px] font-bold text-white">{Math.round(selectedNodeDetail.confidence * 100)}%</p></div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">연결된 관심</p><div className="mt-1.5 flex flex-wrap gap-1">{selectedNodeDetail.connections.length ? selectedNodeDetail.connections.slice(0, 4).map((connection) => <span key={connection.label} className="rounded-full bg-blue-400/15 px-2 py-1 text-[9px] font-semibold text-blue-100">{connection.label} <span className="text-blue-300">{Math.round(connection.score * 100)}%</span></span>) : <span className="text-[10px] text-slate-400">직접 연결 없음</span>}</div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">탐색 근거</p><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-300">{selectedNodeDetail.candidates.flatMap((candidate) => candidate.evidence).find(Boolean) || '반복 탐색 기록을 근거로 확인되었습니다.'}</p></div>{onRequestRemove && <button type="button" onClick={() => onRequestRemove(selectedNodeDetail)} className="mt-3 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-rose-200 transition hover:bg-rose-400/15 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Trash2 className="h-3 w-3" aria-hidden="true" />지도에서 제거</button>}</div></foreignObject>}
               </g>
             </svg>
             {visibleEdges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}

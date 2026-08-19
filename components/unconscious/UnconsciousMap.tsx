@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { CircleDot, Network } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { CircleDot, Minus, Network, Plus, RotateCcw, Settings2, X } from 'lucide-react';
 import { DiscoveryCandidate } from './types';
 
 interface HighlightedVisit {
@@ -282,6 +282,14 @@ function reedSway(point: MapPoint, pointer: MapPoint | null) {
 export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect, onClearHighlights }: UnconsciousMapProps) {
   const [view, setView] = useState<'all' | 'pending' | 'confirmed'>('all');
   const [pointer, setPointer] = useState<MapPoint | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showLabels, setShowLabels] = useState(true);
+  const [showIsolated, setShowIsolated] = useState(true);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<MapPoint>({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState<{ pointerId: number; clientX: number; clientY: number; pan: MapPoint } | null>(null);
+  const dragMovedRef = useRef(false);
   const highlighted = new Set(highlightedIds);
   const highlightedVisitKey = highlightedVisits.map((visit) => `${visit.id}:${visit.domain}`).sort().join('|');
 
@@ -376,19 +384,75 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const positions = clusterMindMapLayout.positions;
   const clusterByNode = clusterMindMapLayout.clusterByNode;
   const hasHighlightedNodes = highlighted.size > 0 || evidenceRelatedNodeIds.size > 0;
+  const selectedNodeId = nodes.find((node) => node.candidates.some((candidate) => candidate.id === selectedId))?.id || null;
+  const connectionFocusId = hoveredNodeId || selectedNodeId;
+  const focusNeighborIds = useMemo(() => {
+    if (!connectionFocusId) return new Set<string>();
+    const related = new Set<string>([connectionFocusId]);
+    for (const edge of edges) {
+      if (edge.source === connectionFocusId) related.add(edge.target);
+      if (edge.target === connectionFocusId) related.add(edge.source);
+    }
+    return related;
+  }, [connectionFocusId, edges]);
+  const visibleNodes = showIsolated ? nodes : nodes.filter((node) => (degrees.get(node.id) || 0) > 0);
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
+
+  const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>): MapPoint | null => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const screenX = ((event.clientX - rect.left) / rect.width) * width;
+    const screenY = ((event.clientY - rect.top) / rect.height) * height;
+    return { x: (screenX - width / 2 - pan.x) / zoom + width / 2, y: (screenY - height / 2 - pan.y) / zoom + height / 2 };
+  };
 
   const handleClearClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (dragMovedRef.current) { dragMovedRef.current = false; return; }
     if (!hasHighlightedNodes || !onClearHighlights) return;
-    if (event.target === event.currentTarget || event.target instanceof SVGRectElement) onClearHighlights();
+    if (event.target === event.currentTarget || event.target instanceof SVGCircleElement) onClearHighlights();
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0 || (event.target as Element).closest('[data-graph-node]')) return;
+    dragMovedRef.current = false;
+    setDragStart({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, pan });
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    const point = pointFromEvent(event);
+    if (point) setPointer(point);
+    if (!dragStart || dragStart.pointerId !== event.pointerId) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    setPointer({
-      x: ((event.clientX - rect.left) / rect.width) * width,
-      y: ((event.clientY - rect.top) / rect.height) * height,
-    });
+    const dx = ((event.clientX - dragStart.clientX) / rect.width) * width;
+    const dy = ((event.clientY - dragStart.clientY) / rect.height) * height;
+    if (Math.hypot(dx, dy) > 3) dragMovedRef.current = true;
+    setPan({ x: dragStart.pan.x + dx, y: dragStart.pan.y + dy });
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (dragStart?.pointerId === event.pointerId) setDragStart(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const handleGraphKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
+    const step = event.shiftKey ? 64 : 26;
+    if (event.key === '+' || event.key === '=') { event.preventDefault(); setZoom((value) => Math.min(2.4, value + 0.15)); return; }
+    if (event.key === '-') { event.preventDefault(); setZoom((value) => Math.max(0.62, value - 0.15)); return; }
+    const direction = { ArrowUp: [0, step], ArrowDown: [0, -step], ArrowLeft: [step, 0], ArrowRight: [-step, 0] } as const;
+    if (event.key in direction) {
+      event.preventDefault();
+      const [x, y] = direction[event.key as keyof typeof direction];
+      setPan((current) => ({ x: current.x + x, y: current.y + y }));
+    }
+  };
+
+  const resetGraphView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setShowLabels(true);
+    setShowIsolated(true);
   };
 
   return (
@@ -398,8 +462,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/15 bg-white/5 text-blue-200"><Network className="h-5 w-5" aria-hidden="true" /></div>
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-200">Cognitive graph</p>
-            <h2 className="mt-1 text-lg font-extrabold text-slate-950">관심 군집 마인드맵</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">하나의 둥근 지도 안에서 여러 관심 군집이 각자의 중심을 기준으로 가지처럼 이어집니다.</p>
+            <h2 className="mt-1 text-lg font-extrabold text-slate-950">관심 그래프</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">색상 원은 관심 주제이고, 선은 함께 살펴본 기록에서 확인한 연결입니다.</p>
           </div>
         </div>
         <div className="aether-map-tab-shell inline-flex rounded-xl border p-1" aria-label="지도 보기 범위">
@@ -409,7 +473,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         </div>
       </div>
 
-      <div className="aether-map-stage relative min-h-[615px] p-3 md:p-5">
+      <div className="aether-map-stage relative min-h-[635px] overflow-hidden p-3 md:p-5">
         {nodes.length === 0 ? (
           <div className="flex min-h-[410px] flex-col items-center justify-center px-5 text-center">
             <div className="grid h-16 w-16 place-items-center rounded-3xl bg-blue-50 text-blue-600"><CircleDot className="h-7 w-7" aria-hidden="true" /></div>
@@ -418,74 +482,77 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           </div>
         ) : (
           <>
-            <svg viewBox={`0 0 ${width} ${height}`} className="h-[590px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
+            <div className="pointer-events-none absolute left-6 top-6 z-10 hidden rounded-xl border border-white/10 bg-slate-950/72 px-3 py-2 text-[11px] text-slate-300 backdrop-blur md:block">
+              <p className="font-semibold text-slate-100">{visibleNodes.length}개 관심 · {visibleEdges.length}개 연결</p>
+              <p className="mt-0.5 text-slate-400">호버하면 연결이 드러납니다.</p>
+            </div>
+            <div className="absolute right-5 top-5 z-20 flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/80 p-1.5 shadow-xl shadow-black/20 backdrop-blur">
+              <button type="button" onClick={() => setZoom((value) => Math.max(0.62, value - 0.15))} className="grid h-9 w-9 place-items-center rounded-lg text-slate-200 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="그래프 축소"><Minus className="h-4 w-4" aria-hidden="true" /></button>
+              <span className="min-w-10 text-center text-[11px] font-bold tabular-nums text-slate-300" aria-live="polite">{Math.round(zoom * 100)}%</span>
+              <button type="button" onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} className="grid h-9 w-9 place-items-center rounded-lg text-slate-200 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="그래프 확대"><Plus className="h-4 w-4" aria-hidden="true" /></button>
+              <span className="mx-0.5 h-5 w-px bg-white/10" aria-hidden="true" />
+              <button type="button" onClick={() => setShowSettings((value) => !value)} className={`grid h-9 w-9 place-items-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${showSettings ? 'bg-white/12 text-white' : 'text-slate-200 hover:bg-white/10'}`} aria-label="그래프 표시 설정" aria-expanded={showSettings}><Settings2 className="h-4 w-4" aria-hidden="true" /></button>
+            </div>
+            {showSettings && <aside className="absolute right-5 top-[4.75rem] z-20 w-60 rounded-2xl border border-white/10 bg-slate-950/95 p-4 text-sm shadow-2xl shadow-black/35 backdrop-blur" aria-label="그래프 표시 설정">
+              <div className="flex items-center justify-between gap-3"><div><p className="font-bold text-slate-100">표시 설정</p><p className="mt-0.5 text-[11px] leading-4 text-slate-400">보이는 요소만 조절합니다.</p></div><button type="button" onClick={() => setShowSettings(false)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="표시 설정 닫기"><X className="h-4 w-4" aria-hidden="true" /></button></div>
+              <div className="mt-4 space-y-3 border-y border-white/10 py-3">
+                <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 text-xs text-slate-200"><span>노드 이름 표시</span><input type="checkbox" checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)} className="h-4 w-4 accent-violet-400" /></label>
+                <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 text-xs text-slate-200"><span>미연결 관심 표시</span><input type="checkbox" checked={showIsolated} onChange={(event) => setShowIsolated(event.target.checked)} className="h-4 w-4 accent-violet-400" /></label>
+              </div>
+              <button type="button" onClick={resetGraphView} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />기본 보기로 되돌리기</button>
+              <p className="mt-3 text-[10px] leading-4 text-slate-500">휠 또는 +/−로 확대하고, 빈 곳을 드래그하거나 방향키로 이동합니다.</p>
+            </aside>}
+            <svg viewBox={`0 0 ${width} ${height}`} className={`h-[610px] w-full touch-none outline-none ${dragStart ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" tabIndex={0} aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onPointerLeave={() => { setPointer(null); setHoveredNodeId(null); }} onKeyDown={handleGraphKeyDown} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(2.4, Math.max(0.62, value + (event.deltaY < 0 ? 0.12 : -0.12)))); }}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
-              <desc id="map-description">둥근 지도 안에 여러 관심 군집이 채워져 있습니다. 각 군집은 실제로 함께 살펴본 관심을 중심과 가지 형태로 연결하며, 청록색 테두리는 현재 질문과 관련된 기존 관심 축입니다.</desc>
+              <desc id="map-description">둥근 지도 안에 주제별 관심 군집이 있습니다. 작은 색상 원은 관심 주제이며, 선은 함께 살펴본 기록에서 확인한 연결입니다. 호버하면 해당 노드의 연결이 강조되고, 확대·축소와 이동이 가능합니다.</desc>
               <defs>
-                <pattern id="dotGrid" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#9db5ff" opacity=".24" /></pattern>
+                <pattern id="dotGrid" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".8" fill="#aab8d5" opacity=".2" /></pattern>
                 <clipPath id="globeClip"><circle cx={width / 2} cy={height / 2} r={globeRadius} /></clipPath>
-                <filter id="nodeGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
               </defs>
-              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="#09111e" stroke="#96a6c9" strokeOpacity=".22" strokeWidth="1.5" />
-              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="url(#dotGrid)" opacity=".56" />
-              <g clipPath="url(#globeClip)">
-              {pointer && <circle cx={pointer.x} cy={pointer.y} r="38" fill="none" stroke="#6ee7ff" strokeOpacity=".18" strokeWidth="1.5" pointerEvents="none" />}
-              {edges.map((edge) => {
-                const source = positions.get(edge.source);
-                const target = positions.get(edge.target);
-                if (!source || !target) return null;
-                const isActive = edge.candidateIds.includes(selectedId || '') || edge.candidateIds.some((id) => highlighted.has(id)) || evidenceRelatedNodeIds.has(edge.source) || evidenceRelatedNodeIds.has(edge.target);
-                const sourceCluster = clusterByNode.get(edge.source);
-                const targetCluster = clusterByNode.get(edge.target);
-                const clusterStroke = sourceCluster && sourceCluster === targetCluster ? sourceCluster.color.stroke : '#9db5ff';
-                const sourceSway = reedSway(source, pointer);
-                const targetSway = reedSway(target, pointer);
-                return <line key={edge.id} x1={source.x + sourceSway.x} y1={source.y + sourceSway.y} x2={target.x + targetSway.x} y2={target.y + targetSway.y} stroke={isActive ? '#6ee7ff' : clusterStroke} strokeOpacity={isActive ? .98 : hasHighlightedNodes ? .18 : .62} strokeWidth={isActive ? 4 : Math.max(1.35, edge.score * 2.45)} />;
-              })}
-              {nodes.map((node) => {
-                const point = positions.get(node.id)!;
-                const candidate = node.candidates[0];
-                const isSelected = node.candidates.some((item) => item.id === selectedId);
-                const isHighlighted = evidenceRelatedNodeIds.has(node.id) || node.candidates.some((item) => highlighted.has(item.id));
-                const isFocused = isSelected || isHighlighted;
-                const isDimmed = hasHighlightedNodes && !isFocused;
-                const degree = degrees.get(node.id) || 0;
-                const cluster = clusterByNode.get(node.id);
-                const baseRadius = nodeRadius(node, degree);
-                const radius = baseRadius + (isHighlighted ? 5 : 0);
-                const status = statusFor(node);
-                const color = isHighlighted ? '#6ee7ff' : isSelected ? '#ffffff' : cluster?.color.stroke || STATUS_STYLE[status].color;
-                const labelLimit = 12;
-                const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
-                const sway = reedSway(point, pointer);
-                return (
-                  <g
-                    key={node.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[status].label}, 연결 ${degree}개. 상세 연결 검토 선택`}
-                    onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
-                    onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }}
-                    className="map-node-reed cursor-pointer outline-none"
-                    style={{
-                      opacity: isDimmed ? 0.3 : 1,
-                      transformBox: 'fill-box',
-                      transformOrigin: 'center',
-                      transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale})`,
-                      transition: 'transform 190ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease',
-                    }}
-                  >
-                    {isHighlighted && <circle cx={point.x} cy={point.y} r={radius + 17} fill="none" stroke="#6ee7ff" strokeOpacity=".72" strokeWidth="1.5" strokeDasharray="3 5" />}
-                    <circle cx={point.x} cy={point.y} r={radius + 12 + sway.strength * 5} fill="#ffffff" opacity={isFocused ? .2 : .05} filter="url(#nodeGlow)" />
-                    <circle cx={point.x} cy={point.y} r={radius} fill={isHighlighted ? '#102c42' : cluster?.color.glow || '#111319'} fillOpacity={isHighlighted ? 1 : .27} stroke={color} strokeWidth={isFocused ? 3.6 : 1.9} />
-                    <text x={point.x} y={point.y + 4} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="700" pointerEvents="none">{label}</text>
-                    <text x={point.x} y={point.y + radius + 17} textAnchor="middle" fill={isHighlighted ? '#9ff3ff' : cluster?.color.stroke || '#a9b0bf'} fontSize="9" fontWeight="600" pointerEvents="none">{isHighlighted ? '질문 관련' : degree > 0 ? `연결 ${degree}개` : '새 관심'}</text>
-                  </g>
-                );
-              })}
+              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="#070c14" stroke="#7787a6" strokeOpacity=".3" strokeWidth="1.3" />
+              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="url(#dotGrid)" opacity=".28" pointerEvents="none" />
+              <g clipPath="url(#globeClip)" transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
+                {pointer && !dragStart && <circle cx={pointer.x} cy={pointer.y} r="30" fill="none" stroke="#cbd5e1" strokeOpacity=".14" strokeWidth="1" pointerEvents="none" />}
+                {visibleEdges.map((edge) => {
+                  const source = positions.get(edge.source);
+                  const target = positions.get(edge.target);
+                  if (!source || !target) return null;
+                  const isEvidenceActive = edge.candidateIds.includes(selectedId || '') || edge.candidateIds.some((id) => highlighted.has(id)) || evidenceRelatedNodeIds.has(edge.source) || evidenceRelatedNodeIds.has(edge.target);
+                  const isConnectionActive = connectionFocusId === edge.source || connectionFocusId === edge.target;
+                  const sourceCluster = clusterByNode.get(edge.source);
+                  const targetCluster = clusterByNode.get(edge.target);
+                  const clusterStroke = sourceCluster && sourceCluster === targetCluster ? sourceCluster.color.stroke : '#94a3b8';
+                  const sourceSway = reedSway(source, pointer);
+                  const targetSway = reedSway(target, pointer);
+                  const isDimmed = (hasHighlightedNodes && !isEvidenceActive) || (connectionFocusId !== null && !isConnectionActive);
+                  return <line key={edge.id} x1={source.x + sourceSway.x} y1={source.y + sourceSway.y} x2={target.x + targetSway.x} y2={target.y + targetSway.y} stroke={isEvidenceActive ? '#6ee7ff' : isConnectionActive ? '#d8e4ff' : clusterStroke} strokeOpacity={isEvidenceActive ? .95 : isConnectionActive ? .94 : isDimmed ? .07 : .25} strokeWidth={isEvidenceActive ? 2.5 : isConnectionActive ? 1.8 : Math.max(.65, edge.score * .92)} />;
+                })}
+                {visibleNodes.map((node) => {
+                  const point = positions.get(node.id)!;
+                  const candidate = node.candidates[0];
+                  const isSelected = node.candidates.some((item) => item.id === selectedId);
+                  const isHighlighted = evidenceRelatedNodeIds.has(node.id) || node.candidates.some((item) => highlighted.has(item.id));
+                  const isConnectionFocused = focusNeighborIds.has(node.id);
+                  const isFocused = isSelected || isHighlighted || isConnectionFocused;
+                  const isDimmed = (hasHighlightedNodes && !isHighlighted && !isSelected) || (connectionFocusId !== null && !isConnectionFocused);
+                  const degree = degrees.get(node.id) || 0;
+                  const cluster = clusterByNode.get(node.id);
+                  const radius = Math.max(4.5, Math.min(13, nodeRadius(node, degree) * .32)) + (isHighlighted ? 1.7 : 0);
+                  const color = isHighlighted ? '#6ee7ff' : cluster?.color.stroke || STATUS_STYLE[statusFor(node)].color;
+                  const labelLimit = 18;
+                  const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
+                  const sway = reedSway(point, pointer);
+                  return (
+                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 연결 검토 선택`} onPointerEnter={() => setHoveredNodeId(node.id)} onPointerLeave={() => setHoveredNodeId((current) => current === node.id ? null : current)} onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale})`, transition: 'transform 190ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
+                      {(isFocused || isHighlighted) && <circle cx={point.x} cy={point.y} r={radius + 4.5} fill="none" stroke={isHighlighted ? '#6ee7ff' : '#e5edff'} strokeOpacity={isHighlighted ? .9 : .65} strokeWidth="1.15" />}
+                      <circle cx={point.x} cy={point.y} r={radius} fill={color} fillOpacity={isHighlighted ? 1 : .88} stroke={isSelected ? '#ffffff' : color} strokeOpacity={isSelected ? .95 : .45} strokeWidth={isSelected ? 1.5 : .7} />
+                      {showLabels && <text x={point.x + radius + 6} y={point.y + 3.5} textAnchor="start" fill={isHighlighted ? '#bdf8ff' : isFocused ? '#f8fafc' : '#cbd5e1'} fillOpacity={isDimmed ? .22 : isFocused ? 1 : .76} fontSize="10" fontWeight={isFocused ? "650" : "500"} pointerEvents="none">{label}</text>}
+                    </g>
+                  );
+                })}
               </g>
             </svg>
-            {edges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}
+            {visibleEdges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}
           </>
         )}
       </div>

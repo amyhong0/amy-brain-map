@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { CircleDot, Focus, Network } from 'lucide-react';
+import { CircleDot, Network } from 'lucide-react';
 import { DiscoveryCandidate } from './types';
 
 interface HighlightedVisit {
@@ -80,10 +80,6 @@ const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = 
   rejected: { label: '제외됨', color: '#65718a' },
 };
 
-const EDGE_STYLE: Record<EdgeKind, { label: string }> = {
-  related: { label: '함께 살펴본 관심' },
-};
-
 function nodeRadius(node: MapNode, degree = 0) {
   const connectionBoost = Math.min(13, degree * 2.15);
   return Math.min(46, 16 + node.count * 3 + node.confidence * 10 + connectionBoost);
@@ -95,11 +91,17 @@ function nodeImportance(node: MapNode, degree: number) {
 
 function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees: Map<string, number>, width: number, height: number): ClusterMindMapLayout {
   if (nodes.length === 0) return { positions: new Map(), clusterByNode: new Map(), clusters: [] };
-  const minX = 64;
-  const maxX = width - 64;
-  const minY = 58;
-  const maxY = height - 66;
-  const clamp = (point: MapPoint): MapPoint => ({ x: Math.max(minX, Math.min(maxX, point.x)), y: Math.max(minY, Math.min(maxY, point.y)) });
+  const center = { x: width / 2, y: height / 2 };
+  const globeRadius = Math.min(width, height) * 0.43;
+  const safeRadius = globeRadius - 44;
+  const clamp = (point: MapPoint): MapPoint => {
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance <= safeRadius || distance === 0) return point;
+    const scale = safeRadius / distance;
+    return { x: center.x + dx * scale, y: center.y + dy * scale };
+  };
   const adjacency = new Map(nodes.map((node) => [node.id, new Map<string, number>()]));
   for (const edge of edges) {
     adjacency.get(edge.source)?.set(edge.target, Math.max(adjacency.get(edge.source)?.get(edge.target) || 0, edge.score));
@@ -138,18 +140,35 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
 
   const positions = new Map<string, MapPoint>();
   const fixedRootIds = new Set<string>();
-  const orderedNodes = clusters.flatMap((cluster) => {
-    const members = [...cluster.memberIds]
-      .map((id) => nodesById.get(id)!)
-      .filter((node) => node.id !== cluster.rootId)
-      .sort((left, right) => nodeImportance(right, degrees.get(right.id) || 0) - nodeImportance(left, degrees.get(left.id) || 0) || left.label.localeCompare(right.label, 'ko-KR'));
-    return [nodesById.get(cluster.rootId)!, ...members];
-  });
-  const center = { x: width / 2, y: height / 2 };
-  const ringRadius = Math.min(height * 0.38, width * 0.28, 205);
-  orderedNodes.forEach((node, index) => {
-    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(1, orderedNodes.length);
-    positions.set(node.id, clamp({ x: center.x + Math.cos(angle) * ringRadius, y: center.y + Math.sin(angle) * ringRadius }));
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+  clusters.forEach((cluster, clusterIndex) => {
+    const rootAngle = -Math.PI / 2 + clusterIndex * goldenAngle;
+    const rootDistance = globeRadius * (0.13 + 0.44 * Math.sqrt((clusterIndex + 0.5) / Math.max(1, clusters.length)));
+    const rootPoint = clamp({ x: center.x + Math.cos(rootAngle) * rootDistance, y: center.y + Math.sin(rootAngle) * rootDistance });
+    positions.set(cluster.rootId, rootPoint);
+    fixedRootIds.add(cluster.rootId);
+
+    const placed = new Set<string>([cluster.rootId]);
+    const queue: Array<{ id: string; depth: number; angle: number; span: number }> = [{ id: cluster.rootId, depth: 0, angle: rootAngle, span: Math.PI * 1.1 }];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = [...(adjacency.get(current.id)?.entries() || [])]
+        .filter(([id]) => cluster.memberIds.has(id) && !placed.has(id))
+        .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || leftId.localeCompare(rightId));
+      if (children.length === 0) continue;
+      const currentPoint = positions.get(current.id)!;
+      const childSpan = children.length === 1 ? 0 : current.depth === 0 ? Math.min(Math.PI * 1.25, Math.PI / 2 + children.length * 0.12) : Math.min(Math.PI * 0.76, Math.max(Math.PI / 8, current.span * 0.72));
+      const startAngle = current.angle - childSpan * (children.length - 1) / 2;
+      children.forEach(([childId], index) => {
+        const angle = startAngle + childSpan * index;
+        const distance = current.depth === 0 ? 86 : 68;
+        const point = clamp({ x: currentPoint.x + Math.cos(angle) * distance, y: currentPoint.y + Math.sin(angle) * distance });
+        positions.set(childId, point);
+        placed.add(childId);
+        queue.push({ id: childId, depth: current.depth + 1, angle, span: Math.max(Math.PI / 10, childSpan / Math.max(1, children.length)) });
+      });
+    }
   });
 
   const points = nodes.map((node) => ({ ...positions.get(node.id)! }));
@@ -306,8 +325,9 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       .map((node) => node.id));
   }, [nodes, highlightedVisitKey]);
 
-  const width = 920;
-  const height = 535;
+  const width = 560;
+  const height = 560;
+  const globeRadius = Math.min(width, height) * 0.43;
   const degrees = useMemo(() => {
     const next = new Map(nodes.map((node) => [node.id, 0]));
     for (const edge of edges) {
@@ -319,7 +339,6 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const clusterMindMapLayout = useMemo(() => resolveClusterMindMapLayout(nodes, edges, degrees, width, height), [nodes, edges, degrees]);
   const positions = clusterMindMapLayout.positions;
   const clusterByNode = clusterMindMapLayout.clusterByNode;
-  const clusters = clusterMindMapLayout.clusters;
   const hasHighlightedNodes = highlighted.size > 0 || evidenceRelatedNodeIds.size > 0;
 
   const handleClearClick = (event: React.MouseEvent<SVGSVGElement>) => {
@@ -344,7 +363,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-200">Cognitive graph</p>
             <h2 className="mt-1 text-lg font-extrabold text-slate-950">관심 군집 마인드맵</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">같은 색의 원은 하나의 관심 군집이며, 선은 실제로 함께 살펴본 관심 사이의 연결입니다.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">하나의 둥근 지도 안에서 여러 관심 군집이 각자의 중심을 기준으로 가지처럼 이어집니다.</p>
           </div>
         </div>
         <div className="aether-map-tab-shell inline-flex rounded-xl border p-1" aria-label="지도 보기 범위">
@@ -354,7 +373,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         </div>
       </div>
 
-      <div className="aether-map-stage relative min-h-[445px] p-3 md:p-5">
+      <div className="aether-map-stage relative min-h-[485px] p-3 md:p-5">
         {nodes.length === 0 ? (
           <div className="flex min-h-[410px] flex-col items-center justify-center px-5 text-center">
             <div className="grid h-16 w-16 place-items-center rounded-3xl bg-blue-50 text-blue-600"><CircleDot className="h-7 w-7" aria-hidden="true" /></div>
@@ -363,14 +382,17 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           </div>
         ) : (
           <>
-            <svg viewBox={`0 0 ${width} ${height}`} className="h-[430px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
+            <svg viewBox={`0 0 ${width} ${height}`} className="h-[465px] w-full touch-none" role="img" aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerMove={handlePointerMove} onPointerLeave={() => setPointer(null)}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
-              <desc id="map-description">같은 색의 원은 하나의 관심 군집을 나타냅니다. 선은 실제로 함께 살펴본 관심 사이의 연결이며, 청록색 테두리는 현재 질문과 관련된 기존 관심 축입니다.</desc>
+              <desc id="map-description">둥근 지도 안에 여러 관심 군집이 채워져 있습니다. 각 군집은 실제로 함께 살펴본 관심을 중심과 가지 형태로 연결하며, 청록색 테두리는 현재 질문과 관련된 기존 관심 축입니다.</desc>
               <defs>
                 <pattern id="dotGrid" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#9db5ff" opacity=".24" /></pattern>
+                <clipPath id="globeClip"><circle cx={width / 2} cy={height / 2} r={globeRadius} /></clipPath>
                 <filter id="nodeGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
               </defs>
-              <rect width={width} height={height} fill="url(#dotGrid)" opacity=".52" />
+              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="#09111e" stroke="#96a6c9" strokeOpacity=".22" strokeWidth="1.5" />
+              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="url(#dotGrid)" opacity=".56" />
+              <g clipPath="url(#globeClip)">
               {pointer && <circle cx={pointer.x} cy={pointer.y} r="38" fill="none" stroke="#6ee7ff" strokeOpacity=".18" strokeWidth="1.5" pointerEvents="none" />}
               {edges.map((edge) => {
                 const source = positions.get(edge.source);
@@ -425,17 +447,11 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                   </g>
                 );
               })}
+              </g>
             </svg>
             {edges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}
           </>
         )}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 px-5 py-3 text-[11px] text-slate-600 md:px-6">
-        {hasHighlightedNodes && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>현재 질문 관련 항목 · 빈 곳 또는 강조된 노드를 다시 클릭하면 해제</span></div>}
-        {evidenceRelatedNodeIds.size > 0 && <div className="flex items-center gap-2 text-cyan-700"><span className="h-2.5 w-2.5 rounded-full border border-cyan-200 bg-cyan-950 shadow-[0_0_10px_rgba(103,232,249,.9)]" /><span>질문 근거와 이어진 관심 축</span></div>}
-        {clusters.slice(0, 6).map((cluster) => <div className="flex items-center gap-2" key={cluster.id}><span className="h-2.5 w-2.5 rounded-full" style={{ background: cluster.color.stroke }} /><span>{cluster.rootLabel} 군집</span></div>)}
-        <div className="flex items-center gap-2"><span className="h-0 w-4 border-t-2 border-slate-400" /><span>{EDGE_STYLE.related.label}</span></div>
-        <div className="ml-auto flex items-center gap-1.5 text-blue-700"><Focus className="h-3.5 w-3.5" aria-hidden="true" />관심 축 {nodes.length}개 · 주제 군집 {clusters.length}개 · 관계선 {edges.length}개</div>
       </div>
     </section>
   );

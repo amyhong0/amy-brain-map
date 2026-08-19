@@ -81,8 +81,8 @@ const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = 
 };
 
 function nodeRadius(node: MapNode, degree = 0) {
-  const connectionBoost = Math.min(13, degree * 2.15);
-  return Math.min(46, 16 + node.count * 3 + node.confidence * 10 + connectionBoost);
+  const connectionBoost = Math.min(10, degree * 1.7);
+  return Math.min(40, 14 + node.count * 2.2 + node.confidence * 8 + connectionBoost);
 }
 
 function nodeImportance(node: MapNode, degree: number) {
@@ -111,30 +111,34 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const remaining = new Set(nodes.map((node) => node.id));
   const clusters: TopicCluster[] = [];
+  const maxMembersPerCluster = nodes.length > 12 ? 5 : 6;
   while (remaining.size > 0) {
     const seed = [...remaining]
       .map((id) => nodesById.get(id)!)
       .sort((left, right) => nodeImportance(right, degrees.get(right.id) || 0) - nodeImportance(left, degrees.get(left.id) || 0) || left.label.localeCompare(right.label, 'ko-KR'))[0];
-    const memberIds = new Set<string>();
+    const memberIds = new Set<string>([seed.id]);
     const queue = [seed.id];
     remaining.delete(seed.id);
-    while (queue.length > 0) {
+    while (queue.length > 0 && memberIds.size < maxMembersPerCluster) {
       const currentId = queue.shift()!;
-      memberIds.add(currentId);
-      for (const neighborId of adjacency.get(currentId)?.keys() || []) {
-        if (!remaining.has(neighborId)) continue;
+      const neighbors = [...(adjacency.get(currentId)?.entries() || [])]
+        .filter(([neighborId]) => remaining.has(neighborId))
+        .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || leftId.localeCompare(rightId));
+      for (const [neighborId] of neighbors) {
+        if (memberIds.size >= maxMembersPerCluster) break;
         remaining.delete(neighborId);
+        memberIds.add(neighborId);
         queue.push(neighborId);
       }
     }
     const root = [...memberIds]
       .map((id) => nodesById.get(id)!)
       .sort((left, right) => nodeImportance(right, degrees.get(right.id) || 0) - nodeImportance(left, degrees.get(left.id) || 0) || left.label.localeCompare(right.label, 'ko-KR'))[0];
-    const color = CLUSTER_PALETTE[clusters.length % CLUSTER_PALETTE.length];
-    clusters.push({ id: `cluster:${root.id}`, rootId: root.id, rootLabel: root.label, memberIds, color });
+    clusters.push({ id: `cluster:${root.id}`, rootId: root.id, rootLabel: root.label, memberIds, color: CLUSTER_PALETTE[0] });
   }
 
   clusters.sort((left, right) => right.memberIds.size - left.memberIds.size || left.rootLabel.localeCompare(right.rootLabel, 'ko-KR'));
+  clusters.forEach((cluster, index) => { cluster.color = CLUSTER_PALETTE[index % CLUSTER_PALETTE.length]; });
   const clusterByNode = new Map<string, TopicCluster>();
   for (const cluster of clusters) for (const nodeId of cluster.memberIds) clusterByNode.set(nodeId, cluster);
 
@@ -142,20 +146,24 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const fixedRootIds = new Set<string>();
   const clusterCenterById = new Map<string, MapPoint>();
   const clusterRadiusById = new Map<string, number>();
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-
-  clusters.forEach((cluster, clusterIndex) => {
+  const maxNodeRadius = Math.max(...nodes.map((node) => nodeRadius(node, degrees.get(node.id) || 0)));
+  const zoneGap = 26;
+  const clusterGeometry = clusters.map((cluster) => {
     const rootNode = nodesById.get(cluster.rootId)!;
     const weight = Math.max(1, cluster.memberIds.size);
-    const desiredRadius = weight === 1
-      ? nodeRadius(rootNode, degrees.get(rootNode.id) || 0) + 16
-      : Math.max(142, Math.min(230, 52 + Math.sqrt(weight) * 56));
-    const angle = -Math.PI / 2 + (clusterIndex - 1) * goldenAngle;
-    const leadRadius = clusterIndex === 0 ? 0 : clusterRadiusById.get(clusters[0].id)!;
-    const centerDistance = clusterIndex === 0
-      ? 0
-      : Math.min(globeRadius - desiredRadius - 16, Math.max(globeRadius * 0.62, leadRadius + desiredRadius + 24));
-    const clusterCenter = clampToGlobe({ x: center.x + Math.cos(angle) * centerDistance, y: center.y + Math.sin(angle) * centerDistance }, desiredRadius + 16);
+    const radius = weight === 1
+      ? nodeRadius(rootNode, degrees.get(rootNode.id) || 0) + 14
+      : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
+    return { cluster, radius };
+  });
+  const totalDiameter = clusterGeometry.reduce((sum, item) => sum + item.radius * 2, 0) + Math.max(0, clusterGeometry.length - 1) * zoneGap;
+  const ringRadius = Math.min(globeRadius - maxNodeRadius - 20, Math.max(0, totalDiameter / (2 * Math.PI * 0.8)));
+
+  clusterGeometry.forEach(({ cluster, radius: desiredRadius }, clusterIndex) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * clusterIndex) / Math.max(1, clusterGeometry.length);
+    const clusterCenter = clusterGeometry.length === 1
+      ? center
+      : clampToGlobe({ x: center.x + Math.cos(angle) * ringRadius, y: center.y + Math.sin(angle) * ringRadius }, desiredRadius + maxNodeRadius + 10);
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);
@@ -174,12 +182,12 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const startAngle = current.angle - childSpan * (children.length - 1) / 2;
       children.forEach(([childId], index) => {
         const childAngle = startAngle + childSpan * index;
-        const distance = current.depth === 0 ? Math.min(164, Math.max(92, desiredRadius * 0.76)) : Math.min(104, Math.max(66, desiredRadius * 0.54));
+        const distance = current.depth === 0 ? Math.min(106, Math.max(76, desiredRadius * 0.76)) : Math.min(76, Math.max(52, desiredRadius * 0.54));
         const rawPoint = { x: currentPoint.x + Math.cos(childAngle) * distance, y: currentPoint.y + Math.sin(childAngle) * distance };
         const dx = rawPoint.x - clusterCenter.x;
         const dy = rawPoint.y - clusterCenter.y;
         const localDistance = Math.hypot(dx, dy);
-        const localLimit = Math.max(20, desiredRadius - nodeRadius(nodesById.get(childId)!, degrees.get(childId) || 0) - 10);
+        const localLimit = Math.max(20, desiredRadius - nodeRadius(nodesById.get(childId)!, degrees.get(childId) || 0) - 6);
         const point = localDistance > localLimit ? { x: clusterCenter.x + dx * localLimit / localDistance, y: clusterCenter.y + dy * localLimit / localDistance } : rawPoint;
         positions.set(childId, point);
         placed.add(childId);
@@ -189,7 +197,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   });
 
   const points = nodes.map((node) => ({ ...positions.get(node.id)! }));
-  for (let iteration = 0; iteration < 260; iteration += 1) {
+  for (let iteration = 0; iteration < 460; iteration += 1) {
     let moved = 0;
     for (let leftIndex = 0; leftIndex < points.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < points.length; rightIndex += 1) {
@@ -200,10 +208,10 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         const dx = right.x - left.x;
         const dy = right.y - left.y;
         const distance = Math.hypot(dx, dy);
-        const requiredDistance = nodeRadius(leftNode, degrees.get(leftNode.id) || 0) + nodeRadius(rightNode, degrees.get(rightNode.id) || 0) + 34;
+        const requiredDistance = nodeRadius(leftNode, degrees.get(leftNode.id) || 0) + nodeRadius(rightNode, degrees.get(rightNode.id) || 0) + 20;
         if (distance >= requiredDistance) continue;
         const angle = distance > 0.01 ? Math.atan2(dy, dx) : (leftIndex + 1) * 1.618;
-        const push = Math.min(10, (requiredDistance - distance) / 2 + 0.4);
+        const push = Math.min(12, (requiredDistance - distance) / 2 + 0.6);
         const leftIsFixed = fixedRootIds.has(leftNode.id);
         const rightIsFixed = fixedRootIds.has(rightNode.id);
         if (!leftIsFixed) { left.x -= Math.cos(angle) * (rightIsFixed ? push * 2 : push); left.y -= Math.sin(angle) * (rightIsFixed ? push * 2 : push); }
@@ -219,7 +227,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const dx = points[index].x - clusterCenter.x;
       const dy = points[index].y - clusterCenter.y;
       const distance = Math.hypot(dx, dy);
-      const localLimit = Math.max(18, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0) - 10);
+      const localLimit = Math.max(18, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0) - 6);
       if (distance > localLimit && distance > 0) Object.assign(points[index], { x: clusterCenter.x + dx * localLimit / distance, y: clusterCenter.y + dy * localLimit / distance });
       Object.assign(points[index], clampToGlobe(points[index], nodeRadius(node, degrees.get(node.id) || 0) + 12));
     }

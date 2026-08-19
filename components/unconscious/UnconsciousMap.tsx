@@ -191,7 +191,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         const directLink = clusterLinks.get(`${leftIndex}:${rightIndex}`);
         const defaultDistance = clusterGeometry[leftIndex].radius + clusterGeometry[rightIndex].radius + 26;
         const requiredDistance = directLink
-          ? Math.max(Math.max(clusterGeometry[leftIndex].radius, clusterGeometry[rightIndex].radius) + 42, defaultDistance * 0.78)
+          ? Math.max(Math.max(clusterGeometry[leftIndex].radius, clusterGeometry[rightIndex].radius) + 30, defaultDistance * 0.6)
           : defaultDistance;
         if (distance >= requiredDistance) continue;
         const fallbackAngle = ((clusterSeed(clusterGeometry[leftIndex].cluster.id) ^ clusterSeed(clusterGeometry[rightIndex].cluster.id)) % 628) / 100;
@@ -212,10 +212,10 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const distance = Math.hypot(dx, dy);
       if (distance < 0.1) continue;
       const defaultDistance = clusterGeometry[link.leftIndex].radius + clusterGeometry[link.rightIndex].radius + 26;
-      const minimumDistance = Math.max(Math.max(clusterGeometry[link.leftIndex].radius, clusterGeometry[link.rightIndex].radius) + 42, defaultDistance * 0.78);
-      const targetDistance = minimumDistance + Math.max(7, 18 - Math.min(11, link.score * 6));
+      const minimumDistance = Math.max(Math.max(clusterGeometry[link.leftIndex].radius, clusterGeometry[link.rightIndex].radius) + 30, defaultDistance * 0.6);
+      const targetDistance = minimumDistance + Math.max(5, 12 - Math.min(8, link.score * 4));
       if (distance <= targetDistance) continue;
-      const pull = Math.min(8, (distance - targetDistance) * (0.04 + Math.min(0.06, link.score * 0.03)));
+      const pull = Math.min(9, (distance - targetDistance) * (0.052 + Math.min(0.07, link.score * 0.035)));
       const angle = Math.atan2(dy, dx);
       left.x += Math.cos(angle) * pull * 0.5;
       left.y += Math.sin(angle) * pull * 0.5;

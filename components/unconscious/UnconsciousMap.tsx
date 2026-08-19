@@ -92,16 +92,6 @@ function nodeImportance(node: MapNode, degree: number) {
 function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees: Map<string, number>, width: number, height: number): ClusterMindMapLayout {
   if (nodes.length === 0) return { positions: new Map(), clusterByNode: new Map(), clusters: [] };
   const center = { x: width / 2, y: height / 2 };
-  const globeRadius = Math.min(width, height) * 0.43;
-  const clampToGlobe = (point: MapPoint, padding = 0): MapPoint => {
-    const dx = point.x - center.x;
-    const dy = point.y - center.y;
-    const distance = Math.hypot(dx, dy);
-    const safeRadius = globeRadius - padding;
-    if (distance <= safeRadius || distance === 0) return point;
-    const scale = safeRadius / distance;
-    return { x: center.x + dx * scale, y: center.y + dy * scale };
-  };
   const adjacency = new Map(nodes.map((node) => [node.id, new Map<string, number>()]));
   for (const edge of edges) {
     adjacency.get(edge.source)?.set(edge.target, Math.max(adjacency.get(edge.source)?.get(edge.target) || 0, edge.score));
@@ -146,8 +136,6 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const fixedRootIds = new Set<string>();
   const clusterCenterById = new Map<string, MapPoint>();
   const clusterRadiusById = new Map<string, number>();
-  const maxNodeRadius = Math.max(...nodes.map((node) => nodeRadius(node, degrees.get(node.id) || 0)));
-  const zoneGap = 26;
   const clusterGeometry = clusters.map((cluster) => {
     const rootNode = nodesById.get(cluster.rootId)!;
     const weight = Math.max(1, cluster.memberIds.size);
@@ -156,14 +144,21 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
     return { cluster, radius };
   });
-  const totalDiameter = clusterGeometry.reduce((sum, item) => sum + item.radius * 2, 0) + Math.max(0, clusterGeometry.length - 1) * zoneGap;
-  const ringRadius = Math.min(globeRadius - maxNodeRadius - 20, Math.max(0, totalDiameter / (2 * Math.PI * 0.8)));
+  const columnCount = clusterGeometry.length <= 2 ? clusterGeometry.length : Math.ceil(Math.sqrt(clusterGeometry.length * 1.5));
+  const rowCount = Math.ceil(clusterGeometry.length / Math.max(1, columnCount));
+  const insetX = 76;
+  const insetY = 32;
 
   clusterGeometry.forEach(({ cluster, radius: desiredRadius }, clusterIndex) => {
-    const angle = -Math.PI / 2 + (Math.PI * 2 * clusterIndex) / Math.max(1, clusterGeometry.length);
-    const clusterCenter = clusterGeometry.length === 1
-      ? center
-      : clampToGlobe({ x: center.x + Math.cos(angle) * ringRadius, y: center.y + Math.sin(angle) * ringRadius }, desiredRadius + maxNodeRadius + 10);
+    const row = Math.floor(clusterIndex / Math.max(1, columnCount));
+    const rowStart = row * columnCount;
+    const membersInRow = Math.min(columnCount, clusterGeometry.length - rowStart);
+    const column = clusterIndex - rowStart;
+    const clusterCenter = {
+      x: membersInRow === 1 ? center.x : insetX + ((width - insetX * 2) * (column + 0.5)) / membersInRow,
+      y: rowCount === 1 ? center.y : insetY + ((height - insetY * 2) * (row + 0.5)) / rowCount,
+    };
+    const angle = row % 2 === 0 ? -Math.PI / 2 : Math.PI / 2;
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);
@@ -229,7 +224,9 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const distance = Math.hypot(dx, dy);
       const localLimit = Math.max(18, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0) - 6);
       if (distance > localLimit && distance > 0) Object.assign(points[index], { x: clusterCenter.x + dx * localLimit / distance, y: clusterCenter.y + dy * localLimit / distance });
-      Object.assign(points[index], clampToGlobe(points[index], nodeRadius(node, degrees.get(node.id) || 0) + 12));
+      const padding = nodeRadius(node, degrees.get(node.id) || 0) + 12;
+      points[index].x = Math.max(padding, Math.min(width - padding, points[index].x));
+      points[index].y = Math.max(padding, Math.min(height - padding, points[index].y));
     }
     if (moved < 0.08) break;
   }
@@ -369,9 +366,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       .map((node) => node.id));
   }, [nodes, highlightedVisitKey]);
 
-  const width = 860;
-  const height = 860;
-  const globeRadius = Math.min(width, height) * 0.43;
+  const width = 980;
+  const height = 620;
   const degrees = useMemo(() => {
     const next = new Map(nodes.map((node) => [node.id, 0]));
     for (const edge of edges) {
@@ -473,7 +469,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         </div>
       </div>
 
-      <div className="aether-map-stage relative min-h-[635px] overflow-hidden p-3 md:p-5">
+      <div className="aether-map-stage relative min-h-[585px] overflow-hidden p-3 md:p-5">
         {nodes.length === 0 ? (
           <div className="flex min-h-[410px] flex-col items-center justify-center px-5 text-center">
             <div className="grid h-16 w-16 place-items-center rounded-3xl bg-blue-50 text-blue-600"><CircleDot className="h-7 w-7" aria-hidden="true" /></div>
@@ -502,16 +498,15 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
               <button type="button" onClick={resetGraphView} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />기본 보기로 되돌리기</button>
               <p className="mt-3 text-[10px] leading-4 text-slate-500">휠 또는 +/−로 확대하고, 빈 곳을 드래그하거나 방향키로 이동합니다.</p>
             </aside>}
-            <svg viewBox={`0 0 ${width} ${height}`} className={`h-[610px] w-full touch-none outline-none ${dragStart ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" tabIndex={0} aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onPointerLeave={() => { setPointer(null); setHoveredNodeId(null); }} onKeyDown={handleGraphKeyDown} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(2.4, Math.max(0.62, value + (event.deltaY < 0 ? 0.12 : -0.12)))); }}>
+            <svg viewBox={`0 0 ${width} ${height}`} className={`h-[560px] w-full touch-none outline-none ${dragStart ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" tabIndex={0} aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onPointerLeave={() => { setPointer(null); setHoveredNodeId(null); }} onKeyDown={handleGraphKeyDown} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(2.4, Math.max(0.62, value + (event.deltaY < 0 ? 0.12 : -0.12)))); }}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
-              <desc id="map-description">둥근 지도 안에 주제별 관심 군집이 있습니다. 작은 색상 원은 관심 주제이며, 선은 함께 살펴본 기록에서 확인한 연결입니다. 호버하면 해당 노드의 연결이 강조되고, 확대·축소와 이동이 가능합니다.</desc>
+              <desc id="map-description">같은 주제를 이루는 관심 노드가 서로 이웃하도록 배치된 평면 그래프입니다. 작은 색상 원은 관심 주제이며, 선은 함께 살펴본 기록에서 확인한 연결입니다. 호버하면 해당 노드의 연결이 강조되고, 확대·축소와 이동이 가능합니다.</desc>
               <defs>
-                <pattern id="dotGrid" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".8" fill="#aab8d5" opacity=".2" /></pattern>
-                <clipPath id="globeClip"><circle cx={width / 2} cy={height / 2} r={globeRadius} /></clipPath>
+                <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".7" fill="#aab8d5" opacity=".16" /></pattern>
               </defs>
-              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="#070c14" stroke="#7787a6" strokeOpacity=".3" strokeWidth="1.3" />
-              <circle cx={width / 2} cy={height / 2} r={globeRadius} fill="url(#dotGrid)" opacity=".28" pointerEvents="none" />
-              <g clipPath="url(#globeClip)" transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
+              <rect x="0" y="0" width={width} height={height} rx="26" fill="#070c14" />
+              <rect x="0" y="0" width={width} height={height} rx="26" fill="url(#dotGrid)" opacity=".18" pointerEvents="none" />
+              <g transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
                 {pointer && !dragStart && <circle cx={pointer.x} cy={pointer.y} r="30" fill="none" stroke="#cbd5e1" strokeOpacity=".14" strokeWidth="1" pointerEvents="none" />}
                 {visibleEdges.map((edge) => {
                   const source = positions.get(edge.source);

@@ -236,9 +236,26 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
     }
   }
 
+  const externalDirectionForNode = (nodeId: string, clusterIndex: number) => {
+    const origin = clusterCenters[clusterIndex];
+    let directionX = 0;
+    let directionY = 0;
+    let totalWeight = 0;
+    for (const [neighborId, score] of adjacency.get(nodeId)?.entries() || []) {
+      const neighborClusterIndex = clusterIndexByNodeId.get(neighborId);
+      if (neighborClusterIndex === undefined || neighborClusterIndex === clusterIndex) continue;
+      const target = clusterCenters[neighborClusterIndex];
+      directionX += (target.x - origin.x) * score;
+      directionY += (target.y - origin.y) * score;
+      totalWeight += score;
+    }
+    return totalWeight > 0 ? Math.atan2(directionY, directionX) : null;
+  };
+
   clusterGeometry.forEach(({ cluster, radius: desiredRadius }, clusterIndex) => {
     const clusterCenter = clusterCenters[clusterIndex];
-    const angle = ((clusterSeed(cluster.id) % 628) / 100) - Math.PI;
+    const randomAngle = ((clusterSeed(cluster.id) % 628) / 100) - Math.PI;
+    const angle = externalDirectionForNode(cluster.rootId, clusterIndex) ?? randomAngle;
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);
@@ -255,7 +272,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const childSpan = children.length === 1 ? 0 : current.depth === 0 ? Math.min(Math.PI * 1.95, Math.PI + children.length * 0.34) : Math.min(Math.PI * 1.04, Math.max(Math.PI / 7, current.span * 0.76));
       const startAngle = current.angle - childSpan * (children.length - 1) / 2;
       children.forEach(([childId], index) => {
-        const childAngle = startAngle + childSpan * index;
+        const childAngle = externalDirectionForNode(childId, clusterIndex) ?? (startAngle + childSpan * index);
         const distance = current.depth === 0 ? Math.min(106, Math.max(76, desiredRadius * 0.76)) : Math.min(76, Math.max(52, desiredRadius * 0.54));
         const rawPoint = { x: currentPoint.x + Math.cos(childAngle) * distance, y: currentPoint.y + Math.sin(childAngle) * distance };
         const dx = rawPoint.x - clusterCenter.x;

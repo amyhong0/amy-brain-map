@@ -16,7 +16,7 @@ interface UnconsciousMapProps {
   selectedId?: string;
   highlightedIds?: string[];
   highlightedVisits?: HighlightedVisit[];
-  onSelect: (candidate: DiscoveryCandidate) => void;
+  onSelect: (candidate: DiscoveryCandidate, detail: MapNodeDetail) => void;
   onClearHighlights?: () => void;
 }
 
@@ -38,6 +38,15 @@ interface MapEdge {
   kind: EdgeKind;
   score: number;
   candidateIds: string[];
+}
+
+export interface MapNodeDetail {
+  id: string;
+  label: string;
+  confidence: number;
+  candidateCount: number;
+  candidates: DiscoveryCandidate[];
+  connections: Array<{ label: string; score: number }>;
 }
 
 interface MapPoint {
@@ -527,8 +536,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
 
   const handleClearClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (dragMovedRef.current) { dragMovedRef.current = false; return; }
-    if (!hasHighlightedNodes || !onClearHighlights) return;
-    if (event.target === event.currentTarget || event.target instanceof SVGCircleElement) onClearHighlights();
+    if ((event.target as Element).closest('[data-graph-node]')) return;
+    onClearHighlights?.();
   };
 
   const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -659,8 +668,18 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                   const labelLimit = 18;
                   const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
                   const sway = reedSway(point, pointer);
+                  const detail: MapNodeDetail = {
+                    id: node.id,
+                    label: node.label,
+                    confidence: node.confidence,
+                    candidateCount: node.candidates.length,
+                    candidates: node.candidates,
+                    connections: edges.filter((edge) => edge.source === node.id || edge.target === node.id)
+                      .map((edge) => ({ label: nodes.find((item) => item.id === (edge.source === node.id ? edge.target : edge.source))?.label || '알 수 없는 관심', score: edge.score }))
+                      .sort((left, right) => right.score - left.score),
+                  };
                   return (
-                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 연결 검토 선택`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
+                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 정보 열기`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (candidate) onSelect(candidate, detail); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (candidate) onSelect(candidate, detail); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
                       <circle cx={point.x} cy={point.y} r={Math.max(radius + 7, 15)} fill="transparent" pointerEvents="all" />
                       {(isFocused || isHighlighted) && <circle cx={point.x} cy={point.y} r={radius + 4.5} fill="none" stroke={isHighlighted ? '#6ee7ff' : '#e5edff'} strokeOpacity={isHighlighted ? .9 : .65} strokeWidth="1.15" />}
                       <circle cx={point.x} cy={point.y} r={radius} fill={color} fillOpacity={isHighlighted ? 1 : .88} stroke={isSelected ? '#ffffff' : color} strokeOpacity={isSelected ? .95 : .45} strokeWidth={isSelected ? 1.5 : .7} />

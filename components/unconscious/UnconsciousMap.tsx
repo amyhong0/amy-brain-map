@@ -160,6 +160,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const clusterIndexByNodeId = new Map<string, number>();
   clusterGeometry.forEach(({ cluster }, index) => cluster.memberIds.forEach((nodeId) => clusterIndexByNodeId.set(nodeId, index)));
   const clusterLinks = new Map<string, { leftIndex: number; rightIndex: number; score: number }>();
+  const bridgeScoreByNodeId = new Map<string, number>();
   for (const edge of edges) {
     const sourceIndex = clusterIndexByNodeId.get(edge.source);
     const targetIndex = clusterIndexByNodeId.get(edge.target);
@@ -170,7 +171,10 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
     const existing = clusterLinks.get(key);
     if (existing) existing.score += edge.score;
     else clusterLinks.set(key, { leftIndex, rightIndex, score: edge.score });
+    bridgeScoreByNodeId.set(edge.source, (bridgeScoreByNodeId.get(edge.source) || 0) + edge.score);
+    bridgeScoreByNodeId.set(edge.target, (bridgeScoreByNodeId.get(edge.target) || 0) + edge.score);
   }
+  const bridgeAllowanceForNode = (nodeId: string) => Math.min(68, (bridgeScoreByNodeId.get(nodeId) || 0) * 40);
   const clusterSeed = (value: string) => [...value].reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
   const clusterCenters = clusterGeometry.map(({ cluster }, index) => {
     if (index === 0) return { ...center };
@@ -278,7 +282,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         const dx = rawPoint.x - clusterCenter.x;
         const dy = rawPoint.y - clusterCenter.y;
         const localDistance = Math.hypot(dx, dy);
-        const localLimit = Math.max(20, desiredRadius - nodeRadius(nodesById.get(childId)!, degrees.get(childId) || 0) - 6);
+        const localLimit = Math.max(20, desiredRadius - nodeRadius(nodesById.get(childId)!, degrees.get(childId) || 0) - 6 + bridgeAllowanceForNode(childId));
         const point = localDistance > localLimit ? { x: clusterCenter.x + dx * localLimit / localDistance, y: clusterCenter.y + dy * localLimit / localDistance } : rawPoint;
         positions.set(childId, point);
         placed.add(childId);
@@ -339,7 +343,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const dx = points[index].x - clusterCenter.x;
       const dy = points[index].y - clusterCenter.y;
       const distance = Math.hypot(dx, dy);
-      const localLimit = Math.max(18, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0) - 6);
+      const localLimit = Math.max(18, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0) - 6 + bridgeAllowanceForNode(node.id));
       if (distance > localLimit && distance > 0) Object.assign(points[index], { x: clusterCenter.x + dx * localLimit / distance, y: clusterCenter.y + dy * localLimit / distance });
       const padding = nodeRadius(node, degrees.get(node.id) || 0) + 12;
       points[index].x = Math.max(padding, Math.min(width - padding, points[index].x));

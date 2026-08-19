@@ -162,6 +162,7 @@ export default function Home() {
   const [historySyncMessage, setHistorySyncMessage] = useState('');
   const [error, setError] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const [policyDomain, setPolicyDomain] = useState('');
   const [pendingPolicyRemoval, setPendingPolicyRemoval] = useState<string | null>(null);
   const [isRemovingPolicy, setIsRemovingPolicy] = useState(false);
@@ -461,6 +462,21 @@ export default function Home() {
     if (settingsOpen) void refreshAutoSyncState();
   }, [settingsOpen, refreshAutoSyncState]);
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusTimer = window.setTimeout(() => settingsCloseButtonRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSettingsOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [settingsOpen]);
+
   const updateAutoSyncInterval = async (intervalMinutes: number) => {
     if (!user || autoSyncLoading) return;
     setAutoSyncLoading(true);
@@ -499,26 +515,43 @@ export default function Home() {
   };
   const removeNodeFromMap = async () => {
     if (!user || !pendingMapRemoval || isRemovingFromMap) return;
-    const targets = pendingMapRemoval.candidates.filter((candidate) => candidate.status !== 'rejected');
+    const removal = pendingMapRemoval;
+    const targets = removal.candidates.filter((candidate) => candidate.status !== 'rejected');
     if (targets.length === 0) {
       setPendingMapRemoval(null);
       clearMapHighlights();
       return;
     }
+
+    const targetIds = new Set(targets.map((candidate) => candidate.id));
+    const previousCandidates = new Map(targets.map((candidate) => [candidate.id, candidate]));
     setIsRemovingFromMap(true);
     setError('');
+    setApprovalNotice('');
+    setCandidates((current) => current.map((candidate) => targetIds.has(candidate.id) ? { ...candidate, status: 'rejected' } : candidate));
+    setPendingMapRemoval(null);
+    clearMapHighlights();
+
     try {
-      const updates = await Promise.all(targets.map(async (candidate) => {
+      const results = await Promise.allSettled(targets.map(async (candidate) => {
         const response = await fetch(`/api/unconscious/candidates/${candidate.id}`, { method: 'PATCH', headers: requestHeaders(), body: JSON.stringify({ status: 'rejected' }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '지도 항목을 제거하지 못했습니다.');
         return data.candidate as DiscoveryCandidate;
       }));
+      const updates = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+      const failedIds = new Set(results.flatMap((result, index) => result.status === 'rejected' ? [targets[index].id] : []));
       const byId = new Map(updates.map((candidate) => [candidate.id, candidate]));
-      setCandidates((current) => current.map((candidate) => byId.get(candidate.id) || candidate));
-      setPendingMapRemoval(null);
-      clearMapHighlights();
-      setApprovalNotice(`“${pendingMapRemoval.label}”을(를) 지도에서 제거했습니다. 근거 방문 기록은 그대로 유지됩니다.`);
+      setCandidates((current) => current.map((candidate) => {
+        if (byId.has(candidate.id)) return byId.get(candidate.id)!;
+        if (failedIds.has(candidate.id)) return previousCandidates.get(candidate.id) || candidate;
+        return candidate;
+      }));
+
+      if (failedIds.size > 0) {
+        throw new Error(`${failedIds.size}개의 연결을 제거하지 못했습니다. 다시 시도해 주세요.`);
+      }
+      setApprovalNotice(`“${removal.label}”을(를) 지도에서 제거했습니다. 근거 방문 기록은 그대로 유지됩니다.`);
     } catch (removalError) {
       setError(visitorFacingError(removalError, '지도 항목을 제거하지 못했습니다.'));
     } finally {
@@ -537,7 +570,7 @@ export default function Home() {
           <div className="flex min-w-0 items-center gap-3"><div className="aether-logo grid h-11 w-11 shrink-0 place-items-center rounded-2xl"><BrainCircuit className="h-5 w-5 text-white" aria-hidden="true" /></div><div className="min-w-0"><p className="text-[10px] font-extrabold tracking-[0.22em] text-blue-600">PERSONAL COGNITIVE ATLAS</p><h1 className="truncate text-xl font-extrabold tracking-tight text-slate-950">Amy Brain Map</h1></div></div>
           <div className="flex shrink-0 items-center gap-2">
             <StatusPill tone={user ? 'green' : 'amber'}><span className={`h-1.5 w-1.5 rounded-full ${user ? 'bg-emerald-500' : 'bg-amber-500'}`} />{authLoading ? '확인 중' : user ? '계정 보안' : '로그인 필요'}</StatusPill>
-            {user && <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen} className="hidden rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 sm:inline-flex">탐색 기록 설정</button>}
+            {user && <button type="button" onClick={() => setSettingsOpen(true)} aria-haspopup="dialog" aria-expanded={settingsOpen} className="inline-flex min-h-10 rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100">탐색 기록 설정</button>}
             {user && <button type="button" onClick={logout} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50"><LogOut className="h-3.5 w-3.5" />로그아웃</button>}
           </div>
         </header>
@@ -546,9 +579,27 @@ export default function Home() {
 
         {needsConnection && <section className="aether-panel-grid brain-card mt-5 rounded-3xl p-5 md:p-6"><div className="grid gap-5 lg:grid-cols-[1fr_auto]"><div><div className="flex items-center gap-2 text-sm font-extrabold text-slate-950"><Network className="h-4 w-4" aria-hidden="true" />Chrome 기록 가져오기</div><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Amy Brain Map 확장 프로그램이 설치되어 있다면, 아래 버튼을 한 번만 누르세요. 현재 로그인한 계정과 이 Chrome 프로필을 자동으로 연결한 뒤 방문 기록을 가져옵니다.</p></div><button type="button" onClick={requestHistoryFromChrome} disabled={isHistorySyncing || isAnalyzing} className="aether-action-primary inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-55">{isHistorySyncing || isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isHistorySyncing ? 'Chrome 기록을 읽는 중…' : isAnalyzing ? '패턴을 분석하는 중…' : 'Chrome 기록 가져오기'}</button></div></section>}
 
-        {settingsOpen && <section className="brain-card mt-5 grid gap-4 rounded-3xl p-5 md:p-6 lg:grid-cols-[1fr_1fr_auto]"><div><p className="text-base font-bold text-slate-900">탐색 기록 설정</p><p className="mt-2 text-sm leading-6 text-slate-600">수집 범위와 수집 제외 도메인을 관리합니다. URL·제목·방문 시각·방문 횟수만 기록하며, 페이지 본문은 읽거나 저장하지 않습니다.</p><button type="button" onClick={exportMyData} disabled={isExporting} className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 text-xs font-bold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-55">{isExporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}{isExporting ? '내보내기 준비 중' : '내 기록 내보내기'}</button></div><form onSubmit={addBlockedDomain} className="flex items-end gap-2"><label className="block flex-1 text-xs font-semibold text-slate-600">수집에서 제외할 도메인<input value={policyDomain} onChange={(event) => setPolicyDomain(event.target.value)} placeholder="예: bank.example.com" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100" /></label><button className="min-h-10 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100">차단</button></form><div className="flex items-start justify-end"><button type="button" aria-label="탐색 기록 설정 닫기" onClick={() => setSettingsOpen(false)} className="grid h-10 w-10 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X className="h-4 w-4" aria-hidden="true" /></button></div><div className="lg:col-span-3 border-t border-slate-100 pt-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-extrabold tracking-[0.12em] text-slate-700">수집 제외 목록</p><StatusPill tone="slate">{blockedPolicies.length}개</StatusPill></div>{blockedPolicies.length ? <div role="list" aria-label="수집 제외 도메인" className="mt-3 flex max-h-40 flex-wrap content-start gap-2 overflow-y-auto pr-1">{blockedPolicies.map((policy) => <div role="listitem" key={policy.domain} className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 pl-3 text-xs font-semibold text-slate-700"><span className="truncate">{policy.domain}</span><button type="button" onClick={() => setPendingPolicyRemoval(policy.domain)} aria-label={`수집 제외 목록에서 ${policy.domain} 삭제`} className="ml-1 grid h-10 w-10 place-items-center rounded-r-xl text-slate-500 transition hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-100"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" /></button></div>)}</div> : <p className="mt-3 text-xs leading-5 text-slate-500">아직 수집에서 제외한 도메인이 없습니다.</p>}</div>{settingsNotice && <p role="status" aria-live="polite" className="lg:col-span-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs font-semibold leading-5 text-emerald-800">{settingsNotice}</p>}</section>}
-
-        {settingsOpen && <section className="brain-card mt-5 rounded-3xl p-5 md:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-blue-600" aria-hidden="true" /><p className="text-base font-extrabold text-slate-950">자동 기록 수집</p>{autoSyncLoading ? <StatusPill tone="slate">확인 중</StatusPill> : autoSync?.active ? <StatusPill tone="green"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />작동 중</StatusPill> : <StatusPill tone="amber">확장 프로그램 확인 필요</StatusPill>}</div><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">확장 프로그램이 설치·연결된 뒤에는 새로 열어본 페이지를 대기열에 넣고, 설정한 간격마다 자동으로 기록 저장소에 동기화합니다.</p></div>{autoSync?.active && <p className="shrink-0 text-xs leading-5 text-slate-500 sm:text-right">다음 확인 · {autoSync.nextRunAt ? formatDate(autoSync.nextRunAt) : '예약 확인 중'}</p>}</div><div className="mt-5 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><label className="block text-xs font-bold text-slate-700">자동 수집 간격<select value={autoSync?.intervalMinutes ?? 30} disabled={!autoSync?.active || autoSyncLoading} onChange={(event) => void updateAutoSyncInterval(Number(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-55">{AUTO_SYNC_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button type="button" onClick={() => void refreshAutoSyncState()} disabled={autoSyncLoading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-xs font-extrabold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-55"><RefreshCw className={`h-3.5 w-3.5 ${autoSyncLoading ? 'animate-spin' : ''}`} aria-hidden="true" />상태 다시 확인</button></div>{autoSyncNotice && <p role="status" aria-live="polite" className="mt-3 text-xs font-semibold leading-5 text-emerald-700">{autoSyncNotice}</p>}{!autoSyncLoading && !autoSync?.active && <p className="mt-3 text-xs leading-5 text-slate-500">상태를 확인할 수 없으면 Chrome 확장 프로그램이 최신 버전으로 설치·활성화되어 있는지 확인한 뒤 이 설정을 다시 여세요.</p>}</section>}
+        {settingsOpen && <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 p-4 py-6 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="history-settings-title" aria-describedby="history-settings-description" className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-5 border-b border-slate-100 px-5 py-5 md:px-6">
+              <div><p className="text-xs font-extrabold tracking-[0.14em] text-blue-700">개인 기록 관리</p><h2 id="history-settings-title" className="mt-1 text-xl font-extrabold text-slate-950">탐색 기록 설정</h2><p id="history-settings-description" className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">수집 범위, 제외 도메인, 자동 수집 간격을 관리합니다. 페이지 본문은 읽거나 저장하지 않습니다.</p></div>
+              <button ref={settingsCloseButtonRef} type="button" aria-label="탐색 기록 설정 닫기" onClick={() => setSettingsOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"><X className="h-4 w-4" aria-hidden="true" /></button>
+            </div>
+            <div className="max-h-[calc(100svh-10rem)] overflow-y-auto p-5 md:p-6">
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.9fr)]">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4"><p className="text-sm font-extrabold text-slate-950">내 기록과 수집 제외 목록</p><p className="mt-1 text-xs leading-5 text-slate-600">URL·제목·방문 시각·방문 횟수만 관리합니다.</p><button type="button" onClick={exportMyData} disabled={isExporting} className="mt-4 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 text-xs font-bold text-blue-700 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-55">{isExporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}{isExporting ? '내보내기 준비 중' : '내 기록 내보내기'}</button>
+                  <form onSubmit={addBlockedDomain} className="mt-5 flex items-end gap-2"><label className="block flex-1 text-xs font-semibold text-slate-600">수집에서 제외할 도메인<input value={policyDomain} onChange={(event) => setPolicyDomain(event.target.value)} placeholder="예: bank.example.com" className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100" /></label><button type="submit" className="min-h-11 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-100">차단</button></form>
+                  <div className="mt-5 border-t border-slate-200 pt-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-extrabold tracking-[0.12em] text-slate-700">수집 제외 목록</p><StatusPill tone="slate">{blockedPolicies.length}개</StatusPill></div>{blockedPolicies.length ? <div role="list" aria-label="수집 제외 도메인" className="mt-3 flex max-h-40 flex-wrap content-start gap-2 overflow-y-auto pr-1">{blockedPolicies.map((policy) => <div role="listitem" key={policy.domain} className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white pl-3 text-xs font-semibold text-slate-700"><span className="truncate">{policy.domain}</span><button type="button" onClick={() => setPendingPolicyRemoval(policy.domain)} aria-label={`수집 제외 목록에서 ${policy.domain} 삭제`} className="ml-1 grid h-10 w-10 place-items-center rounded-r-xl text-slate-500 transition hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-100"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" /></button></div>)}</div> : <p className="mt-3 text-xs leading-5 text-slate-500">아직 수집에서 제외한 도메인이 없습니다.</p>}</div>
+                </div>
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/55 p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-blue-600" aria-hidden="true" /><p className="text-sm font-extrabold text-slate-950">자동 기록 수집</p>{autoSyncLoading ? <StatusPill tone="slate">확인 중</StatusPill> : autoSync?.active ? <StatusPill tone="green"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />작동 중</StatusPill> : <StatusPill tone="amber">확장 프로그램 확인 필요</StatusPill>}</div><p className="mt-2 text-xs leading-5 text-slate-600">새로 열어본 페이지를 대기열에 넣고 설정한 간격마다 기록 저장소에 동기화합니다.</p></div>{autoSync?.active && <p className="shrink-0 text-right text-[11px] leading-5 text-slate-500">다음 확인 · {autoSync.nextRunAt ? formatDate(autoSync.nextRunAt) : '예약 확인 중'}</p>}</div>
+                  <div className="mt-5 grid gap-3 rounded-2xl border border-blue-100 bg-white/75 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><label className="block text-xs font-bold text-slate-700">자동 수집 간격<select value={autoSync?.intervalMinutes ?? 30} disabled={!autoSync?.active || autoSyncLoading} onChange={(event) => void updateAutoSyncInterval(Number(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-55">{AUTO_SYNC_INTERVAL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button type="button" onClick={() => void refreshAutoSyncState()} disabled={autoSyncLoading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-xs font-extrabold text-blue-700 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-55"><RefreshCw className={`h-3.5 w-3.5 ${autoSyncLoading ? 'animate-spin' : ''}`} aria-hidden="true" />상태 다시 확인</button></div>
+                  {autoSyncNotice && <p role="status" aria-live="polite" className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs font-semibold leading-5 text-emerald-800">{autoSyncNotice}</p>}{!autoSyncLoading && !autoSync?.active && <p className="mt-3 text-xs leading-5 text-slate-500">상태를 확인할 수 없으면 Chrome 확장 프로그램이 최신 버전으로 설치·활성화되어 있는지 확인한 뒤 이 설정을 다시 여세요.</p>}
+                </div>
+              </div>
+              {settingsNotice && <p role="status" aria-live="polite" className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs font-semibold leading-5 text-emerald-800">{settingsNotice}</p>}
+            </div>
+          </div>
+        </div>}
 
         {pendingPolicyRemoval && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" role="presentation"><div role="alertdialog" aria-modal="true" aria-labelledby="remove-domain-title" aria-describedby="remove-domain-description" className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold tracking-[0.14em] text-rose-700">수집 제외 목록 변경</p><h2 id="remove-domain-title" className="mt-2 text-lg font-extrabold text-slate-950">이 도메인을 삭제할까요?</h2></div><button type="button" onClick={() => setPendingPolicyRemoval(null)} disabled={isRemovingPolicy} aria-label="삭제 확인 닫기" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 disabled:opacity-50"><X className="h-4 w-4" aria-hidden="true" /></button></div><p id="remove-domain-description" className="mt-3 text-sm leading-6 text-slate-600">“{pendingPolicyRemoval}”은(는) 이후 Chrome 기록 수집에서 다시 제외되지 않습니다. 이미 저장된 기록은 삭제되지 않습니다.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setPendingPolicyRemoval(null)} disabled={isRemovingPolicy} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">취소</button><button type="button" onClick={removeBlockedDomain} disabled={isRemovingPolicy} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 text-xs font-bold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-55">{isRemovingPolicy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}{isRemovingPolicy ? '삭제 중' : '목록에서 삭제'}</button></div></div></div>}
         {pendingMapRemoval && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" role="presentation"><div role="alertdialog" aria-modal="true" aria-labelledby="remove-map-node-title" aria-describedby="remove-map-node-description" className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold tracking-[0.14em] text-rose-700">지도 항목 제거</p><h2 id="remove-map-node-title" className="mt-2 text-lg font-extrabold text-slate-950">“{pendingMapRemoval.label}”을(를) 지도에서 제거할까요?</h2></div><button type="button" onClick={() => setPendingMapRemoval(null)} disabled={isRemovingFromMap} aria-label="지도 항목 제거 확인 닫기" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 disabled:opacity-50"><X className="h-4 w-4" aria-hidden="true" /></button></div><p id="remove-map-node-description" className="mt-3 text-sm leading-6 text-slate-600">이 주제와 연결된 {pendingMapRemoval.candidateCount}개의 지도 항목을 숨깁니다. 근거가 된 방문 기록과 Chrome 기록은 삭제하지 않습니다.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setPendingMapRemoval(null)} disabled={isRemovingFromMap} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">취소</button><button type="button" onClick={removeNodeFromMap} disabled={isRemovingFromMap} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 text-xs font-bold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-55">{isRemovingFromMap ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}{isRemovingFromMap ? '제거 중' : '지도에서 제거'}</button></div></div></div>}

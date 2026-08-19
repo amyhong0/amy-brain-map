@@ -157,25 +157,43 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
     return { cluster, radius };
   });
-  const radialSlots: Array<{ x: number; y: number; angle: number }> = [];
-  let placedClusters = 1;
-  let ring = 1;
-  while (placedClusters < clusterGeometry.length) {
-    const slotsInRing = Math.min(ring * 6, clusterGeometry.length - placedClusters);
-    const radiusX = Math.min(width * 0.4, 210 + (ring - 1) * 142);
-    const radiusY = Math.min(height * 0.4, 150 + (ring - 1) * 108);
-    for (let slot = 0; slot < slotsInRing; slot += 1) {
-      const angle = -Math.PI / 2 + (Math.PI * 2 * slot) / slotsInRing;
-      radialSlots.push({ x: center.x + Math.cos(angle) * radiusX, y: center.y + Math.sin(angle) * radiusY, angle });
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const clusterCenters = clusterGeometry.map((_, index) => {
+    if (index === 0) return { ...center };
+    const angle = -2.18 + index * goldenAngle;
+    const distance = 92 + Math.sqrt(index) * 56 + (index % 3) * 9;
+    return { x: center.x + Math.cos(angle) * distance, y: center.y + Math.sin(angle) * distance * 0.78 };
+  });
+
+  for (let iteration = 0; iteration < 280; iteration += 1) {
+    for (let leftIndex = 0; leftIndex < clusterCenters.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < clusterCenters.length; rightIndex += 1) {
+        const left = clusterCenters[leftIndex];
+        const right = clusterCenters[rightIndex];
+        const dx = right.x - left.x;
+        const dy = right.y - left.y;
+        const distance = Math.hypot(dx, dy);
+        const requiredDistance = clusterGeometry[leftIndex].radius + clusterGeometry[rightIndex].radius + 24;
+        if (distance >= requiredDistance) continue;
+        const angle = distance > 0.1 ? Math.atan2(dy, dx) : (leftIndex + 1) * goldenAngle;
+        const push = Math.min(10, (requiredDistance - distance) * 0.16 + 0.35);
+        if (leftIndex !== 0) { left.x -= Math.cos(angle) * push; left.y -= Math.sin(angle) * push; }
+        if (rightIndex !== 0) { right.x += Math.cos(angle) * push; right.y += Math.sin(angle) * push; }
+      }
     }
-    placedClusters += slotsInRing;
-    ring += 1;
+    for (let index = 1; index < clusterCenters.length; index += 1) {
+      const point = clusterCenters[index];
+      const radius = clusterGeometry[index].radius;
+      point.x += (center.x - point.x) * 0.009;
+      point.y += (center.y - point.y) * 0.009;
+      point.x = Math.max(radius + 22, Math.min(width - radius - 22, point.x));
+      point.y = Math.max(radius + 22, Math.min(height - radius - 22, point.y));
+    }
   }
 
   clusterGeometry.forEach(({ cluster, radius: desiredRadius }, clusterIndex) => {
-    const radialSlot = radialSlots[clusterIndex - 1];
-    const clusterCenter = clusterIndex === 0 ? center : { x: radialSlot.x, y: radialSlot.y };
-    const angle = clusterIndex === 0 ? -Math.PI / 2 : radialSlot.angle;
+    const clusterCenter = clusterCenters[clusterIndex];
+    const angle = clusterIndex === 0 ? -Math.PI / 2 : Math.atan2(clusterCenter.y - center.y, clusterCenter.x - center.x);
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);
@@ -281,14 +299,14 @@ function reedSway(point: MapPoint, pointer: MapPoint | null) {
   const dx = point.x - pointer.x;
   const dy = point.y - pointer.y;
   const distance = Math.hypot(dx, dy);
-  const reach = 172;
+  const reach = 112;
   if (distance >= reach) return { x: 0, y: 0, scale: 1, strength: 0 };
-  const strength = Math.pow(1 - distance / reach, 1.7);
+  const strength = Math.pow(1 - distance / reach, 2.1);
   const angle = distance > 0.1 ? Math.atan2(dy, dx) : 0;
   return {
-    x: Math.cos(angle) * 18 * strength,
-    y: Math.sin(angle) * 11 * strength,
-    scale: 1 + strength * 0.1,
+    x: Math.cos(angle) * 5.5 * strength,
+    y: Math.sin(angle) * 3.5 * strength,
+    scale: 1 + strength * 0.025,
     strength,
   };
 }
@@ -304,6 +322,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const [pan, setPan] = useState<MapPoint>({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState<{ pointerId: number; clientX: number; clientY: number; pan: MapPoint } | null>(null);
   const dragMovedRef = useRef(false);
+  const hoveredNodeRef = useRef<string | null>(null);
   const highlighted = new Set(highlightedIds);
   const highlightedVisitKey = highlightedVisits.map((visit) => `${visit.id}:${visit.domain}`).sort().join('|');
 
@@ -435,7 +454,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const point = pointFromEvent(event);
-    if (point) setPointer(point);
+    if (point && !hoveredNodeRef.current) setPointer(point);
     if (!dragStart || dragStart.pointerId !== event.pointerId) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const dx = ((event.clientX - dragStart.clientX) / rect.width) * width;
@@ -515,7 +534,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
               <button type="button" onClick={resetGraphView} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />기본 보기로 되돌리기</button>
               <p className="mt-3 text-[10px] leading-4 text-slate-500">휠 또는 +/−로 확대하고, 빈 곳을 드래그하거나 방향키로 이동합니다.</p>
             </aside>}
-            <svg viewBox={`0 0 ${width} ${height}`} className={`h-[560px] w-full touch-none outline-none ${dragStart ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" tabIndex={0} aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onPointerLeave={() => { setPointer(null); setHoveredNodeId(null); }} onKeyDown={handleGraphKeyDown} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(2.4, Math.max(0.62, value + (event.deltaY < 0 ? 0.12 : -0.12)))); }}>
+            <svg viewBox={`0 0 ${width} ${height}`} className={`h-[560px] w-full touch-none outline-none ${dragStart ? 'cursor-grabbing' : 'cursor-grab'}`} role="img" tabIndex={0} aria-labelledby="map-title map-description" onClick={handleClearClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onPointerLeave={() => { hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId(null); }} onKeyDown={handleGraphKeyDown} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(2.4, Math.max(0.62, value + (event.deltaY < 0 ? 0.12 : -0.12)))); }}>
               <title id="map-title">Amy Brain Map 관심과 연결 지도</title>
               <desc id="map-description">같은 주제를 이루는 관심 노드가 서로 이웃하도록 배치된 평면 그래프입니다. 작은 색상 원은 관심 주제이며, 선은 함께 살펴본 기록에서 확인한 연결입니다. 호버하면 해당 노드의 연결이 강조되고, 확대·축소와 이동이 가능합니다.</desc>
               <defs>
@@ -555,7 +574,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                   const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
                   const sway = reedSway(point, pointer);
                   return (
-                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 연결 검토 선택`} onPointerEnter={() => setHoveredNodeId(node.id)} onPointerLeave={() => setHoveredNodeId((current) => current === node.id ? null : current)} onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale})`, transition: 'transform 190ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
+                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 연결 검토 선택`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (isHighlighted && onClearHighlights) onClearHighlights(); else if (candidate) onSelect(candidate); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
+                      <circle cx={point.x} cy={point.y} r={Math.max(radius + 7, 15)} fill="transparent" pointerEvents="all" />
                       {(isFocused || isHighlighted) && <circle cx={point.x} cy={point.y} r={radius + 4.5} fill="none" stroke={isHighlighted ? '#6ee7ff' : '#e5edff'} strokeOpacity={isHighlighted ? .9 : .65} strokeWidth="1.15" />}
                       <circle cx={point.x} cy={point.y} r={radius} fill={color} fillOpacity={isHighlighted ? 1 : .88} stroke={isSelected ? '#ffffff' : color} strokeOpacity={isSelected ? .95 : .45} strokeWidth={isSelected ? 1.5 : .7} />
                       {showLabels && <text x={point.x + radius + 6} y={point.y + 3.5} textAnchor="start" fill={isHighlighted ? '#bdf8ff' : isFocused ? '#f8fafc' : '#cbd5e1'} fillOpacity={isDimmed ? .22 : isFocused ? 1 : .76} fontSize="10" fontWeight={isFocused ? "650" : "500"} pointerEvents="none">{label}</text>}

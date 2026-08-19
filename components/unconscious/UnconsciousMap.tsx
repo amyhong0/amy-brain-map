@@ -157,15 +157,16 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
     return { cluster, radius };
   });
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  const clusterCenters = clusterGeometry.map((_, index) => {
+  const clusterSeed = (value: string) => [...value].reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
+  const clusterCenters = clusterGeometry.map(({ cluster }, index) => {
     if (index === 0) return { ...center };
-    const angle = -2.18 + index * goldenAngle;
-    const distance = 92 + Math.sqrt(index) * 56 + (index % 3) * 9;
-    return { x: center.x + Math.cos(angle) * distance, y: center.y + Math.sin(angle) * distance * 0.78 };
+    const seed = clusterSeed(cluster.id);
+    const xUnit = ((seed & 0xffff) / 0xffff) - 0.5;
+    const yUnit = (((seed >>> 16) & 0xffff) / 0xffff) - 0.5;
+    return { x: center.x + xUnit * 300, y: center.y + yUnit * 210 };
   });
 
-  for (let iteration = 0; iteration < 280; iteration += 1) {
+  for (let iteration = 0; iteration < 520; iteration += 1) {
     for (let leftIndex = 0; leftIndex < clusterCenters.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < clusterCenters.length; rightIndex += 1) {
         const left = clusterCenters[leftIndex];
@@ -173,19 +174,26 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         const dx = right.x - left.x;
         const dy = right.y - left.y;
         const distance = Math.hypot(dx, dy);
-        const requiredDistance = clusterGeometry[leftIndex].radius + clusterGeometry[rightIndex].radius + 24;
+        const requiredDistance = clusterGeometry[leftIndex].radius + clusterGeometry[rightIndex].radius + 26;
         if (distance >= requiredDistance) continue;
-        const angle = distance > 0.1 ? Math.atan2(dy, dx) : (leftIndex + 1) * goldenAngle;
-        const push = Math.min(10, (requiredDistance - distance) * 0.16 + 0.35);
-        if (leftIndex !== 0) { left.x -= Math.cos(angle) * push; left.y -= Math.sin(angle) * push; }
-        if (rightIndex !== 0) { right.x += Math.cos(angle) * push; right.y += Math.sin(angle) * push; }
+        const fallbackAngle = ((clusterSeed(clusterGeometry[leftIndex].cluster.id) ^ clusterSeed(clusterGeometry[rightIndex].cluster.id)) % 628) / 100;
+        const angle = distance > 0.1 ? Math.atan2(dy, dx) : fallbackAngle;
+        const push = Math.min(9, (requiredDistance - distance) * 0.18 + 0.28);
+        left.x -= Math.cos(angle) * push * 0.5;
+        left.y -= Math.sin(angle) * push * 0.5;
+        right.x += Math.cos(angle) * push * 0.5;
+        right.y += Math.sin(angle) * push * 0.5;
       }
     }
-    for (let index = 1; index < clusterCenters.length; index += 1) {
+
+    const centroid = clusterCenters.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+    centroid.x /= clusterCenters.length;
+    centroid.y /= clusterCenters.length;
+    for (let index = 0; index < clusterCenters.length; index += 1) {
       const point = clusterCenters[index];
       const radius = clusterGeometry[index].radius;
-      point.x += (center.x - point.x) * 0.009;
-      point.y += (center.y - point.y) * 0.009;
+      point.x += (center.x - centroid.x) * 0.06 + (center.x - point.x) * 0.0025;
+      point.y += (center.y - centroid.y) * 0.06 + (center.y - point.y) * 0.0025;
       point.x = Math.max(radius + 22, Math.min(width - radius - 22, point.x));
       point.y = Math.max(radius + 22, Math.min(height - radius - 22, point.y));
     }
@@ -193,7 +201,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
 
   clusterGeometry.forEach(({ cluster, radius: desiredRadius }, clusterIndex) => {
     const clusterCenter = clusterCenters[clusterIndex];
-    const angle = clusterIndex === 0 ? -Math.PI / 2 : Math.atan2(clusterCenter.y - center.y, clusterCenter.x - center.x);
+    const angle = ((clusterSeed(cluster.id) % 628) / 100) - Math.PI;
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);

@@ -188,7 +188,11 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         const dx = right.x - left.x;
         const dy = right.y - left.y;
         const distance = Math.hypot(dx, dy);
-        const requiredDistance = clusterGeometry[leftIndex].radius + clusterGeometry[rightIndex].radius + 26;
+        const directLink = clusterLinks.get(`${leftIndex}:${rightIndex}`);
+        const defaultDistance = clusterGeometry[leftIndex].radius + clusterGeometry[rightIndex].radius + 26;
+        const requiredDistance = directLink
+          ? Math.max(Math.max(clusterGeometry[leftIndex].radius, clusterGeometry[rightIndex].radius) + 42, defaultDistance * 0.78)
+          : defaultDistance;
         if (distance >= requiredDistance) continue;
         const fallbackAngle = ((clusterSeed(clusterGeometry[leftIndex].cluster.id) ^ clusterSeed(clusterGeometry[rightIndex].cluster.id)) % 628) / 100;
         const angle = distance > 0.1 ? Math.atan2(dy, dx) : fallbackAngle;
@@ -207,10 +211,11 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const dy = right.y - left.y;
       const distance = Math.hypot(dx, dy);
       if (distance < 0.1) continue;
-      const minimumDistance = clusterGeometry[link.leftIndex].radius + clusterGeometry[link.rightIndex].radius + 26;
-      const targetDistance = minimumDistance + Math.max(8, 28 - Math.min(18, link.score * 10));
+      const defaultDistance = clusterGeometry[link.leftIndex].radius + clusterGeometry[link.rightIndex].radius + 26;
+      const minimumDistance = Math.max(Math.max(clusterGeometry[link.leftIndex].radius, clusterGeometry[link.rightIndex].radius) + 42, defaultDistance * 0.78);
+      const targetDistance = minimumDistance + Math.max(7, 18 - Math.min(11, link.score * 6));
       if (distance <= targetDistance) continue;
-      const pull = Math.min(6, (distance - targetDistance) * (0.025 + Math.min(0.035, link.score * 0.018)));
+      const pull = Math.min(8, (distance - targetDistance) * (0.04 + Math.min(0.06, link.score * 0.03)));
       const angle = Math.atan2(dy, dx);
       left.x += Math.cos(angle) * pull * 0.5;
       left.y += Math.sin(angle) * pull * 0.5;
@@ -237,7 +242,6 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);
-    fixedRootIds.add(cluster.rootId);
 
     const placed = new Set<string>([cluster.rootId]);
     const queue: Array<{ id: string; depth: number; angle: number; span: number }> = [{ id: cluster.rootId, depth: 0, angle, span: Math.PI * 1.16 }];
@@ -267,8 +271,29 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   });
 
   const points = nodes.map((node) => ({ ...positions.get(node.id)! }));
+  const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
   for (let iteration = 0; iteration < 460; iteration += 1) {
     let moved = 0;
+    for (const edge of edges) {
+      const sourceIndex = nodeIndexById.get(edge.source);
+      const targetIndex = nodeIndexById.get(edge.target);
+      if (sourceIndex === undefined || targetIndex === undefined) continue;
+      const source = points[sourceIndex];
+      const target = points[targetIndex];
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 0.1) continue;
+      const desiredDistance = nodeRadius(nodes[sourceIndex], degrees.get(nodes[sourceIndex].id) || 0) + nodeRadius(nodes[targetIndex], degrees.get(nodes[targetIndex].id) || 0) + 28;
+      if (distance <= desiredDistance) continue;
+      const pull = Math.min(3.5, (distance - desiredDistance) * (0.012 + edge.score * 0.014));
+      const angle = Math.atan2(dy, dx);
+      source.x += Math.cos(angle) * pull * 0.5;
+      source.y += Math.sin(angle) * pull * 0.5;
+      target.x -= Math.cos(angle) * pull * 0.5;
+      target.y -= Math.sin(angle) * pull * 0.5;
+      moved += pull;
+    }
     for (let leftIndex = 0; leftIndex < points.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < points.length; rightIndex += 1) {
         const leftNode = nodes[leftIndex];

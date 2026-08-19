@@ -71,7 +71,20 @@ const CLUSTER_PALETTE: ClusterColor[] = [
   { stroke: '#fb7185', glow: '#f43f5e' },
   { stroke: '#34d399', glow: '#10b981' },
   { stroke: '#fb923c', glow: '#f97316' },
+  { stroke: '#67e8f9', glow: '#22d3ee' },
+  { stroke: '#d8b4fe', glow: '#c084fc' },
+  { stroke: '#a3e635', glow: '#84cc16' },
+  { stroke: '#f9a8d4', glow: '#f472b6' },
+  { stroke: '#fde68a', glow: '#fbbf24' },
+  { stroke: '#86efac', glow: '#4ade80' },
 ];
+
+function colorForCluster(index: number): ClusterColor {
+  const existing = CLUSTER_PALETTE[index];
+  if (existing) return existing;
+  const hue = Math.round((index * 137.508) % 360);
+  return { stroke: `hsl(${hue} 82% 70%)`, glow: `hsl(${hue} 78% 55%)` };
+}
 
 const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = {
   pending: { label: '연결 검토 대상', color: '#9db5ff' },
@@ -128,7 +141,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   }
 
   clusters.sort((left, right) => right.memberIds.size - left.memberIds.size || left.rootLabel.localeCompare(right.rootLabel, 'ko-KR'));
-  clusters.forEach((cluster, index) => { cluster.color = CLUSTER_PALETTE[index % CLUSTER_PALETTE.length]; });
+  clusters.forEach((cluster, index) => { cluster.color = colorForCluster(index); });
   const clusterByNode = new Map<string, TopicCluster>();
   for (const cluster of clusters) for (const nodeId of cluster.memberIds) clusterByNode.set(nodeId, cluster);
 
@@ -144,21 +157,25 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
     return { cluster, radius };
   });
-  const columnCount = clusterGeometry.length <= 2 ? clusterGeometry.length : Math.ceil(Math.sqrt(clusterGeometry.length * 1.5));
-  const rowCount = Math.ceil(clusterGeometry.length / Math.max(1, columnCount));
-  const insetX = 76;
-  const insetY = 32;
+  const radialSlots: Array<{ x: number; y: number; angle: number }> = [];
+  let placedClusters = 1;
+  let ring = 1;
+  while (placedClusters < clusterGeometry.length) {
+    const slotsInRing = Math.min(ring * 6, clusterGeometry.length - placedClusters);
+    const radiusX = Math.min(width * 0.4, 210 + (ring - 1) * 142);
+    const radiusY = Math.min(height * 0.4, 150 + (ring - 1) * 108);
+    for (let slot = 0; slot < slotsInRing; slot += 1) {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * slot) / slotsInRing;
+      radialSlots.push({ x: center.x + Math.cos(angle) * radiusX, y: center.y + Math.sin(angle) * radiusY, angle });
+    }
+    placedClusters += slotsInRing;
+    ring += 1;
+  }
 
   clusterGeometry.forEach(({ cluster, radius: desiredRadius }, clusterIndex) => {
-    const row = Math.floor(clusterIndex / Math.max(1, columnCount));
-    const rowStart = row * columnCount;
-    const membersInRow = Math.min(columnCount, clusterGeometry.length - rowStart);
-    const column = clusterIndex - rowStart;
-    const clusterCenter = {
-      x: membersInRow === 1 ? center.x : insetX + ((width - insetX * 2) * (column + 0.5)) / membersInRow,
-      y: rowCount === 1 ? center.y : insetY + ((height - insetY * 2) * (row + 0.5)) / rowCount,
-    };
-    const angle = row % 2 === 0 ? -Math.PI / 2 : Math.PI / 2;
+    const radialSlot = radialSlots[clusterIndex - 1];
+    const clusterCenter = clusterIndex === 0 ? center : { x: radialSlot.x, y: radialSlot.y };
+    const angle = clusterIndex === 0 ? -Math.PI / 2 : radialSlot.angle;
     clusterCenterById.set(cluster.id, clusterCenter);
     clusterRadiusById.set(cluster.id, desiredRadius);
     positions.set(cluster.rootId, clusterCenter);

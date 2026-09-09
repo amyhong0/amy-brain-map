@@ -4,11 +4,8 @@ import { isAuthenticationDomain, isAuthenticationVisit } from '@/lib/unconscious
 import { createBackupIfDue } from '@/lib/gcs-archive';
 import {
   AnalysisRun,
-  BrowserVisit,
-  CandidateKind,
   DiscoveryCandidate,
   completeAnalysisRun,
-  createId,
   failAnalysisRun,
   insertDiscoveryCandidates,
   isDomainBlocked,
@@ -18,83 +15,12 @@ import {
   pruneExpiredData,
   startAnalysisRun,
 } from '@/lib/utils/unconscious-storage';
+import {
+  sessionizeVisits,
+  extractTripletsWithLLM,
+} from '@/lib/unconscious-kg-engine';
 
 export const runtime = 'nodejs';
-
-const STOP_WORDS = new Set([
-  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'your', 'you', 'are', 'was', 'new', 'www', 'com', 'org',
-  'https', 'http', '대한', '위한', '있는', '없는', '대한민국', '그리고', '하지만', '에서', '으로', '하는', '하기', '정보',
-  '뉴스', '홈', '로그인', '검색', '페이지', '서비스', '공식', '블로그', '게시물', '더보기', '보기', '관련', '오늘',
-]);
-
-function termsFromVisit(visit: BrowserVisit): string[] {
-  const source = `${visit.title} ${visit.domain}`
-    .toLocaleLowerCase('ko-KR')
-    .replace(/https?:\/\//g, ' ')
-    .replace(/[^a-z0-9가-힣\s-]/gi, ' ');
-  return [...new Set(source
-    .split(/[\s-]+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length >= 2 && term.length <= 28 && !STOP_WORDS.has(term)))]
-    .slice(0, 8);
-}
-
-function humanLabel(term: string): string {
-  return term.replace(/(^|\s)\S/g, (value) => value.toUpperCase());
-}
-
-function createCandidates(visits: BrowserVisit[], runId: string, now: string, autoApplyThreshold: number): DiscoveryCandidate[] {
-  const meaningfulVisits = visits.filter((visit) => !isAuthenticationVisit(visit));
-  const signals = new Map<string, { visits: BrowserVisit[]; domains: Set<string>; totalVisitCount: number }>();
-  for (const visit of meaningfulVisits) {
-    for (const term of termsFromVisit(visit)) {
-      const signal = signals.get(term) || { visits: [], domains: new Set<string>(), totalVisitCount: 0 };
-      signal.visits.push(visit);
-      signal.domains.add(visit.domain);
-      signal.totalVisitCount += visit.visitCount;
-      signals.set(term, signal);
-    }
-  }
-
-  const result: DiscoveryCandidate[] = [];
-  for (const [term, signal] of signals) {
-    const uniqueUrls = new Set(signal.visits.map((visit) => visit.normalizedUrl)).size;
-    const isRepeated = uniqueUrls >= 2 || signal.totalVisitCount >= 3;
-    if (!isRepeated) continue;
-    const confidence = Math.min(0.84, 0.45 + uniqueUrls * 0.08 + Math.min(signal.totalVisitCount, 8) * 0.025 + Math.min(signal.domains.size, 4) * 0.04);
-    const sourceDomains = [...signal.domains].slice(0, 5);
-    result.push({
-      id: createId('candidate'), kind: 'interest', subject: humanLabel(term), relation: '반복적으로 탐색함', object: sourceDomains.join(' · '),
-      confidence, status: confidence >= autoApplyThreshold ? 'auto_applied' : 'pending',
-      evidence: [`${uniqueUrls}개 페이지에서 총 ${signal.totalVisitCount}회 방문 기록이 감지되었습니다.`, `출처 도메인: ${sourceDomains.join(', ')}`],
-      sourceVisitIds: [...new Set(signal.visits.map((visit) => visit.id))].slice(0, 12), sourceDomains, createdAt: now, updatedAt: now, analysisRunId: runId,
-    });
-  }
-
-  const chronological = [...meaningfulVisits].sort((a, b) => a.lastVisitTime - b.lastVisitTime);
-  const bridgeSeen = new Set<string>();
-  for (let index = 0; index < chronological.length - 1; index += 1) {
-    const left = chronological[index];
-    const right = chronological[index + 1];
-    const gap = right.lastVisitTime - left.lastVisitTime;
-    if (gap < 0 || gap > 30 * 60 * 1000 || left.domain === right.domain) continue;
-    const leftTerm = termsFromVisit(left)[0];
-    const rightTerm = termsFromVisit(right)[0];
-    if (!leftTerm || !rightTerm || leftTerm === rightTerm) continue;
-    const key = [leftTerm, rightTerm].sort().join('::');
-    if (bridgeSeen.has(key)) continue;
-    bridgeSeen.add(key);
-    result.push({
-      id: createId('candidate'), kind: 'bridge', subject: humanLabel(leftTerm), relation: '같은 탐색 흐름에서 연결됨', object: humanLabel(rightTerm),
-      confidence: 0.58, status: 'pending',
-      evidence: [`${Math.round(gap / 60000)}분 이내에 ${left.domain} → ${right.domain} 순서로 탐색했습니다.`],
-      sourceVisitIds: [left.id, right.id], sourceDomains: [left.domain, right.domain], createdAt: now, updatedAt: now, analysisRunId: runId,
-    });
-  }
-
-  const kindOrder: Record<CandidateKind, number> = { interest: 0, revisit: 1, bridge: 2 };
-  return result.sort((a, b) => b.confidence - a.confidence || kindOrder[a.kind] - kindOrder[b.kind]).slice(0, 30);
-}
 
 function publicCandidate(candidate: DiscoveryCandidate) {
   return { ...candidate, confidence: Number(candidate.confidence.toFixed(2)) };
@@ -116,8 +42,17 @@ export async function POST(request: NextRequest) {
       .filter((visit) => !isAuthenticationVisit(visit))
       .sort((a, b) => b.lastVisitTime - a.lastVisitTime)
       .slice(0, store.settings.maxVisitsPerRun);
-    const generated = createCandidates(eligible, run.id, new Date().toISOString(), store.settings.autoApplyThreshold);
-    const candidates = await insertDiscoveryCandidates(userId, generated);
+
+    // 1. Sessionize chronological browsing visits
+    const sessions = sessionizeVisits(eligible);
+
+    // 2. Extract rich knowledge triplets via NVIDIA AI API (or fallback rule engine)
+    const apiKey = process.env.NVIDIA_API_KEY?.trim() || '';
+    const now = new Date().toISOString();
+    const extraction = await extractTripletsWithLLM(sessions, apiKey, store.settings.autoApplyThreshold, run.id, now);
+
+    // 3. Persist discovery candidates
+    const candidates = await insertDiscoveryCandidates(userId, extraction.candidates);
     const completedRun = await completeAnalysisRun(userId, run.id, eligible.length, candidates.length);
     let backup: { created: boolean; archiveId?: string } | { created: false; unavailable: true } = { created: false, unavailable: true };
     try {
@@ -126,7 +61,15 @@ export async function POST(request: NextRequest) {
       // Backups must never block a user's private graph update. Configuration errors stay observable in server logs.
       console.error('GCS backup was skipped:', backupError);
     }
-    return NextResponse.json({ success: true, run: completedRun, candidates: candidates.map(publicCandidate), analyzedVisits: eligible.length, backup });
+    return NextResponse.json({
+      success: true,
+      run: completedRun,
+      candidates: candidates.map(publicCandidate),
+      analyzedVisits: eligible.length,
+      sessionCount: extraction.sessionCount,
+      usedLLM: extraction.usedLLM,
+      backup,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Browsing-history analysis failed.';
     if (run) await failAnalysisRun(userId, run.id, message);

@@ -555,3 +555,25 @@ export function safeVisitView(visit: BrowserVisit) {
 export function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
+
+/**
+ * Permanently deletes all visits, candidates, and analysis runs for the specified user,
+ * resetting settings timestamps. Policies and credentials remain untouched.
+ */
+export async function clearAllUserData(userId: string): Promise<{ deletedVisits: number; deletedCandidates: number; deletedRuns: number }> {
+  const sql = database();
+  const candRes = await sql.query('DELETE FROM discovery_candidates WHERE user_id = $1 RETURNING id', [userId]);
+  const visitRes = await sql.query('DELETE FROM browser_visits WHERE user_id = $1 RETURNING id', [userId]);
+  const runRes = await sql.query('DELETE FROM analysis_runs WHERE user_id = $1 RETURNING id', [userId]);
+  await sql.query(
+    'UPDATE user_settings SET last_analyzed_at = NULL, last_synced_at = NULL, updated_at = NOW() WHERE user_id = $1',
+    [userId],
+  );
+
+  return {
+    deletedVisits: visitRes.length,
+    deletedCandidates: candRes.length,
+    deletedRuns: runRes.length,
+  };
+}
+

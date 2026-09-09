@@ -100,10 +100,13 @@ button:not(:disabled) { cursor: pointer; }
 .aether-dashboard .bg-white,
 .aether-dashboard .bg-slate-50,
 .aether-dashboard .bg-slate-100,
+.aether-dashboard .bg-white\/75,
 .aether-dashboard .bg-white\/80,
 .aether-dashboard .bg-white\/85 { background-color: var(--aether-surface-raised) !important; }
 .aether-dashboard .bg-slate-50\/70,
-.aether-dashboard .bg-violet-50\/40 { background-color: rgba(27, 30, 37, .72) !important; }
+.aether-dashboard .bg-slate-50\/80,
+.aether-dashboard .bg-violet-50\/40,
+.aether-dashboard .bg-blue-50\/55 { background-color: rgba(27, 30, 37, .72) !important; }
 .aether-dashboard .bg-blue-50,
 .aether-dashboard .bg-violet-50 { background-color: rgba(75, 103, 160, .16) !important; }
 .aether-dashboard .bg-emerald-50 { background-color: rgba(72, 158, 131, .14) !important; }

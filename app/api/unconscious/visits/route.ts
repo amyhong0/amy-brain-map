@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExtensionInstallation, requireUser } from '@/lib/unconscious-auth';
-import { countBrowserVisits, getRecentVisits, ingestBrowserVisits, normalizeUrl, safeVisitView } from '@/lib/utils/unconscious-storage';
+import {
+  clearAllUserData,
+  countBrowserVisits,
+  getRecentVisits,
+  ingestBrowserVisits,
+  normalizeUrl,
+  safeVisitView,
+} from '@/lib/utils/unconscious-storage';
 
 export const runtime = 'nodejs';
 
@@ -82,5 +89,23 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to read browsing history.' }, { status: 500 });
+  }
+}
+
+/** Permanently deletes all visits and graph patterns for the current user. */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireUser(request);
+  if ('response' in auth) return auth.response;
+
+  try {
+    const result = await clearAllUserData(auth.user.id);
+    return NextResponse.json({
+      success: true,
+      message: 'All browsing history and graph patterns have been deleted.',
+      ...result,
+    });
+  } catch (error) {
+    console.error('Failed to clear user data:', error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to clear browsing history.' }, { status: 500 });
   }
 }

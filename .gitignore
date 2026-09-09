@@ -35,3 +35,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# credentials & secrets
+*-gcs.json
+*service_account*.json
+*.key
+*.cert
+
+# local media / screenshots
+스크린샷*.png

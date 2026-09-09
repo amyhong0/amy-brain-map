@@ -22,11 +22,14 @@ export function candidateReviewCopy(candidate: DiscoveryCandidate): CandidateRev
   }
 
   if (candidate.kind === 'bridge') {
+    const relationDesc = candidate.relation && candidate.relation !== '같은 탐색 흐름에서 연결됨'
+      ? `${candidate.relation} 맥락`
+      : '가까운 시간대의 같은 탐색 흐름';
     return {
       category: '탐색 흐름 연결 검토',
-      title: `“${subject}”와 “${object}”가 가까운 시간대의 같은 탐색 흐름에서 함께 나타났습니다.`,
+      title: `“${subject}”와 “${object}”가 ${relationDesc}에서 함께 나타났습니다.`,
       question: '두 주제를 내 지도에서 하나의 연결로 남길까요?',
-      mapEffect: `지도에서 “${subject}” 노드와 “${object}” 노드 사이에 같은 탐색 흐름을 뜻하는 연결선이 확정됩니다.`,
+      mapEffect: `지도에서 “${subject}” 노드와 “${object}” 노드 사이에 ‘${candidate.relation || '연결'}’을 뜻하는 연결선이 확정됩니다.`,
     };
   }
 

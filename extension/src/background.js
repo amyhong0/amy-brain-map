@@ -173,17 +173,30 @@ async function connectFromDashboard(endpoint, connectCode) {
 }
 
 async function uploadBatch(settings, visits) {
-  const response = await fetch(apiUrl(settings.endpoint, '/api/unconscious/visits'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-brain-installation-token': settings.installationToken,
-    },
-    body: JSON.stringify({ installationId: settings.installationId, visits }),
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || `동기화 요청이 실패했습니다 (${response.status}).`);
+  try {
+    const response = await fetch(apiUrl(settings.endpoint, '/api/unconscious/visits'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-brain-installation-token': settings.installationToken,
+      },
+      body: JSON.stringify({ installationId: settings.installationId, visits }),
+    });
+    if (!response.ok) {
+      if (response.status === 401) {
+        await setState({ status: 'needs_configuration', lastError: '대시보드 연결 권한을 갱신해야 합니다. 웹 대시보드에서 Chrome 기록 가져오기를 눌러주세요.' });
+        return false;
+      }
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `동기화 요청 실패 (${response.status})`);
+    }
+    return true;
+  } catch (err) {
+    if (err instanceof TypeError && /failed to fetch/i.test(err.message)) {
+      await setState({ status: 'idle', lastError: '네트워크 또는 서버에 일시적으로 연결할 수 없습니다.' });
+      return false;
+    }
+    throw err;
   }
 }
 
@@ -206,7 +219,8 @@ async function syncPending() {
   const batch = queue.slice(0, MAX_BATCH_SIZE);
   await setState({ queuedCount: queue.length, status: 'syncing', lastError: '' });
   try {
-    await uploadBatch(settings, batch);
+    const ok = await uploadBatch(settings, batch);
+    if (!ok) return { synced: 0, queued: queue.length, configured: false };
     const remaining = queue.slice(batch.length);
     await chrome.storage.local.set({ [QUEUE_KEY]: remaining });
     await setState({
@@ -219,7 +233,7 @@ async function syncPending() {
     if (remaining.length > 0) return syncPending();
     return { synced: batch.length, queued: 0, configured: true };
   } catch (error) {
-    await setState({ queuedCount: queue.length, status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
+    await setState({ queuedCount: queue.length, status: 'idle', lastError: error instanceof Error ? error.message : '동기화 중 오류가 발생했습니다.' });
     return { synced: 0, queued: queue.length, configured: true, error: String(error) };
   }
 }
@@ -240,14 +254,15 @@ async function syncInitialHistory(days = 3650) {
   try {
     for (let start = 0; start < total; start += MAX_BATCH_SIZE) {
       const batch = records.slice(start, start + MAX_BATCH_SIZE);
-      await uploadBatch(settings, batch);
+      const ok = await uploadBatch(settings, batch);
+      if (!ok) break;
       synced += batch.length;
       await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'syncing', lastError: '' });
     }
     await setState({ syncedCount: synced, queuedCount: 0, totalCount: total, status: 'idle', lastSyncedAt: new Date().toISOString(), lastError: '' });
     return { synced, queued: 0, queuedFromHistory: total, incremental: false, configured: true };
   } catch (error) {
-    await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
+    await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, status: 'idle', lastError: error instanceof Error ? error.message : '동기화 중 오류가 발생했습니다.' });
     return { synced, queued: total - synced, queuedFromHistory: total, incremental: false, configured: true, error: String(error) };
   }
 }
@@ -270,31 +285,40 @@ async function syncHistorySinceLastSync() {
   try {
     for (let start = 0; start < total; start += MAX_BATCH_SIZE) {
       const batch = records.slice(start, start + MAX_BATCH_SIZE);
-      await uploadBatch(settings, batch);
+      const ok = await uploadBatch(settings, batch);
+      if (!ok) break;
       synced += batch.length;
       await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, syncMode: 'incremental', status: 'syncing', lastError: '' });
     }
     await setState({ syncedCount: synced, queuedCount: 0, totalCount: total, syncMode: 'incremental', status: 'idle', lastSyncedAt: new Date().toISOString(), lastError: '' });
     return { synced, queued: 0, queuedFromHistory: total, incremental: true, configured: true };
   } catch (error) {
-    await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, syncMode: 'incremental', status: 'error', lastError: error instanceof Error ? error.message : '동기화 중 알 수 없는 오류가 발생했습니다.' });
+    await setState({ syncedCount: synced, queuedCount: total - synced, totalCount: total, syncMode: 'incremental', status: 'idle', lastError: error instanceof Error ? error.message : '동기화 중 오류가 발생했습니다.' });
     return { synced, queued: total - synced, queuedFromHistory: total, incremental: true, configured: true, error: String(error) };
   }
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await registerDashboardBridge();
-  const settings = await getSettings();
-  await ensureSyncAlarm(settings);
-  await setState({ status: settings.enabled ? 'ready' : 'paused' });
+  try {
+    await registerDashboardBridge();
+    const settings = await getSettings();
+    await ensureSyncAlarm(settings);
+    await setState({ status: settings.enabled ? 'ready' : 'paused' });
+  } catch {
+    // Silent
+  }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await registerDashboardBridge();
-  const settings = await getSettings();
-  await ensureSyncAlarm(settings);
-  await syncHistorySinceLastSync();
-  await syncPending();
+  try {
+    await registerDashboardBridge();
+    const settings = await getSettings();
+    await ensureSyncAlarm(settings);
+    await syncHistorySinceLastSync();
+    await syncPending();
+  } catch {
+    // Silent
+  }
 });
 
 chrome.history.onVisited.addListener(async (item) => {

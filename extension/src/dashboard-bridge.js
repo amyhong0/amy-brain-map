@@ -70,12 +70,16 @@ window.addEventListener('message', async (event) => {
       postToDashboard({ type: 'set-auto-sync-interval-result', requestId: message.requestId, result: result.autoSync || null });
       return;
     }
+    if (message.type === 'reset-sync-state') {
+      await chrome.runtime.sendMessage({ type: 'reset-sync-state' });
+      return;
+    }
     if (message.type !== 'initial-history-sync' && message.type !== 'auto-connect-and-initial-history-sync') return;
 
     const requestedAt = Date.now();
     const extensionMessage = message.type === 'auto-connect-and-initial-history-sync'
-      ? { type: 'auto-connect-and-initial-sync', endpoint: window.location.origin, connectCode: message.connectCode, days: 3650 }
-      : { type: 'initial-sync', days: 3650 };
+      ? { type: 'auto-connect-and-initial-sync', endpoint: window.location.origin, connectCode: message.connectCode, days: 3650, forceFull: Boolean(message.forceFull) }
+      : { type: 'initial-sync', days: 3650, forceFull: Boolean(message.forceFull) };
     const started = await chrome.runtime.sendMessage(extensionMessage);
     if (started?.error) throw new Error(started.error);
     postToDashboard({ type: 'initial-history-sync-started', requestId: message.requestId });

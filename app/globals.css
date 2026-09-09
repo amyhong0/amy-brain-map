@@ -96,6 +96,8 @@ button:not(:disabled) { cursor: pointer; }
 .aether-dashboard .text-amber-700,
 .aether-dashboard .text-amber-800 { color: #e7d09b !important; }
 .aether-dashboard .text-rose-700 { color: #ffb5bb !important; }
+.aether-dashboard .text-rose-500,
+.aether-dashboard .text-rose-600 { color: #ff949d !important; }
 
 .aether-dashboard .bg-white,
 .aether-dashboard .bg-slate-50,
@@ -106,6 +108,7 @@ button:not(:disabled) { cursor: pointer; }
 .aether-dashboard .bg-slate-50\/70,
 .aether-dashboard .bg-slate-50\/80,
 .aether-dashboard .bg-violet-50\/40,
+.aether-dashboard .bg-rose-50\/40,
 .aether-dashboard .bg-blue-50\/55 { background-color: rgba(27, 30, 37, .72) !important; }
 .aether-dashboard .bg-blue-50,
 .aether-dashboard .bg-violet-50 { background-color: rgba(75, 103, 160, .16) !important; }
@@ -136,6 +139,8 @@ button:not(:disabled) { cursor: pointer; }
 .aether-dashboard .hover\:bg-emerald-700:hover,
 .aether-dashboard .hover\:bg-rose-700:hover { background-color: #dbe4ff !important; }
 .aether-dashboard .hover\:bg-blue-50:hover,
+.aether-dashboard .hover\:bg-rose-100:hover,
+.aether-dashboard .hover\:bg-rose-50:hover,
 .aether-dashboard .hover\:bg-slate-50:hover { background-color: rgba(75, 103, 160, .26) !important; }
 
 .aether-header {

@@ -315,11 +315,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
       return;
     }
+    if (message.type === 'reset-sync-state') {
+      const state = await chrome.storage.local.get(STATE_KEY);
+      await chrome.storage.local.set({
+        [STATE_KEY]: {
+          ...(state[STATE_KEY] || {}),
+          syncedCount: 0,
+          queuedCount: 0,
+          totalCount: 0,
+          lastSyncedAt: null,
+          status: 'idle',
+          lastError: '',
+        },
+      });
+      sendResponse({ success: true });
+      return;
+    }
     if (message.type === 'auto-connect-and-initial-sync') {
       const wasConfigured = configuredForSync(await getSettings());
       await connectFromDashboard(message.endpoint, message.connectCode);
       sendResponse({ success: true, started: true });
-      await (wasConfigured ? syncHistorySinceLastSync() : syncInitialHistory(Number(message.days || 3650)));
+      const doFull = Boolean(message.forceFull) || !wasConfigured;
+      await (doFull ? syncInitialHistory(Number(message.days || 3650)) : syncHistorySinceLastSync());
       return;
     }
     if (message.type === 'initial-sync') {

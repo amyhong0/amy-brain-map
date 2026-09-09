@@ -280,51 +280,70 @@ export default function Home() {
       const connectionData = await connectionResponse.json();
       if (!connectionResponse.ok || !connectionData.code) throw new Error(connectionData.error || 'Chrome 확장 프로그램 연결을 준비하지 못했습니다.');
 
-      const requestId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-      const result = await new Promise<{ queuedFromHistory?: number; synced?: number; incremental?: boolean; error?: string }>((resolve, reject) => {
-        let bridgeTimeoutId: number | null = null;
-        let syncTimeoutId: number | null = null;
-        const cleanUp = () => {
-          if (bridgeTimeoutId !== null) window.clearTimeout(bridgeTimeoutId);
-          if (syncTimeoutId !== null) window.clearTimeout(syncTimeoutId);
-          window.removeEventListener('message', handleMessage);
-        };
-        bridgeTimeoutId = window.setTimeout(() => {
-          cleanUp();
-          reject(new Error('자동 연결을 시작하지 못했습니다. Chrome 확장 프로그램을 v0.6.0 이상으로 새로고침한 뒤 이 웹 페이지도 새로고침하고 다시 시도하세요.'));
-        }, 15_000);
-        function handleMessage(event: MessageEvent) {
-          if (event.source !== window || event.origin !== window.location.origin) return;
-          const response = event.data;
-          if (response?.source !== 'amy-brain-map-extension' || response?.requestId !== requestId) return;
-          if (response.type === 'initial-history-sync-started') {
+      const runSyncAttempt = (type: 'auto-connect-and-initial-history-sync' | 'initial-history-sync') => {
+        const requestId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+        return new Promise<{ queuedFromHistory?: number; synced?: number; incremental?: boolean; error?: string }>((resolve, reject) => {
+          let bridgeTimeoutId: number | null = null;
+          let syncTimeoutId: number | null = null;
+          const cleanUp = () => {
             if (bridgeTimeoutId !== null) window.clearTimeout(bridgeTimeoutId);
-            syncTimeoutId = window.setTimeout(() => {
-              cleanUp();
-              reject(new Error('Chrome 기록 동기화가 너무 오래 걸리고 있습니다. 확장 프로그램 팝업의 오류 메시지를 확인한 뒤 다시 시도하세요.'));
-            }, 20 * 60 * 1_000);
-            setHistorySyncMessage('Chrome 프로필을 확인했습니다. 새로 추가된 기록을 동기화합니다…');
-            return;
-          }
-          if (response.type === 'initial-history-sync-progress') {
-            const state = response.state || {};
-            const total = Number(state.totalCount || 0);
-            const synced = Number(state.syncedCount || 0);
-            if (total > 0) {
-              const percentage = Math.min(100, Math.round((synced / total) * 100));
-              setHistorySyncProgress(percentage);
-              setHistorySyncMessage(`Chrome 기록 동기화 중… ${percentage}% · ${synced.toLocaleString('ko-KR')} / ${total.toLocaleString('ko-KR')}개`);
+            if (syncTimeoutId !== null) window.clearTimeout(syncTimeoutId);
+            window.removeEventListener('message', handleMessage);
+          };
+          bridgeTimeoutId = window.setTimeout(() => {
+            cleanUp();
+            reject(new Error('자동 연결을 시작하지 못했습니다. Chrome 확장 프로그램을 v0.6.4 이상으로 새로고침한 뒤 이 웹 페이지도 새로고침하고 다시 시도하세요.'));
+          }, 15_000);
+          function handleMessage(event: MessageEvent) {
+            if (event.source !== window || event.origin !== window.location.origin) return;
+            const response = event.data;
+            if (response?.source !== 'amy-brain-map-extension' || response?.requestId !== requestId) return;
+            if (response.type === 'initial-history-sync-started') {
+              if (bridgeTimeoutId !== null) window.clearTimeout(bridgeTimeoutId);
+              syncTimeoutId = window.setTimeout(() => {
+                cleanUp();
+                reject(new Error('Chrome 기록 동기화가 너무 오래 걸리고 있습니다. 확장 프로그램 팝업의 오류 메시지를 확인한 뒤 다시 시도하세요.'));
+              }, 20 * 60 * 1_000);
+              setHistorySyncMessage('Chrome 프로필을 확인했습니다. 방문 기록을 읽어와 동기화합니다…');
+              return;
             }
-            return;
+            if (response.type === 'initial-history-sync-progress') {
+              const state = response.state || {};
+              const total = Number(state.totalCount || 0);
+              const synced = Number(state.syncedCount || 0);
+              if (total > 0) {
+                const percentage = Math.min(100, Math.round((synced / total) * 100));
+                setHistorySyncProgress(percentage);
+                setHistorySyncMessage(`Chrome 기록 동기화 중… ${percentage}% · ${synced.toLocaleString('ko-KR')} / ${total.toLocaleString('ko-KR')}개`);
+              }
+              return;
+            }
+            if (response.type !== 'initial-history-sync-result') return;
+            cleanUp();
+            resolve(response.result || {});
           }
-          if (response.type !== 'initial-history-sync-result') return;
-          cleanUp();
-          resolve(response.result || {});
-        }
-        window.addEventListener('message', handleMessage);
-        window.postMessage({ source: 'amy-brain-map-dashboard', type: 'auto-connect-and-initial-history-sync', requestId, connectCode: connectionData.code }, window.location.origin);
-      });
+          window.addEventListener('message', handleMessage);
+          window.postMessage({
+            source: 'amy-brain-map-dashboard',
+            type,
+            requestId,
+            connectCode: connectionData.code,
+            forceFull: true,
+          }, window.location.origin);
+        });
+      };
+
+      let result = await runSyncAttempt('auto-connect-and-initial-history-sync');
       if (result.error) throw new Error(result.error);
+
+      // If auto-connect returned 0 items from incremental sync while we have 0 visits (e.g. after clear-all on an older extension instance),
+      // immediately execute initial-history-sync which forces a full 3650-day sync without incremental filtering:
+      if (Number(result.queuedFromHistory || 0) === 0 && visits.length === 0) {
+        setHistorySyncMessage('이전 동기화 시점을 재설정하고 Chrome 전체 기록을 다시 탐색합니다…');
+        result = await runSyncAttempt('initial-history-sync');
+        if (result.error) throw new Error(result.error);
+      }
+
       setIsAnalyzing(true);
       const analysisResponse = await fetch('/api/unconscious/analyze', { method: 'POST', headers: requestHeaders() });
       const analysisData = await analysisResponse.json();
@@ -336,7 +355,7 @@ export default function Home() {
       setHistorySyncMessage(total > 0
         ? (result.incremental
           ? `${total.toLocaleString('ko-KR')}개의 최근 Chrome 기록을 확인해 지도에 반영했습니다.`
-          : `${total.toLocaleString('ko-KR')}개의 Chrome 기록을 처음 읽어 지도에 반영했습니다.`)
+          : `${total.toLocaleString('ko-KR')}개의 Chrome 기록을 읽어 지도에 반영했습니다.`)
         : '새로 가져올 Chrome 기록이 없습니다. 확장 프로그램은 이후 방문을 자동으로 동기화합니다.');
     } catch (syncError) {
       setError(visitorFacingError(syncError, 'Chrome 기록을 가져오지 못했습니다.'));
@@ -578,6 +597,7 @@ export default function Home() {
       setSelectedNodeDetail(null);
       setPendingClearAll(false);
       setSettingsOpen(false);
+      window.postMessage({ source: 'amy-brain-map-dashboard', type: 'reset-sync-state' }, window.location.origin);
       setApprovalNotice('모든 브라우징 기록과 지식 그래프 패턴이 성공적으로 삭제되었습니다.');
       await loadData();
     } catch (clearError) {
@@ -647,18 +667,20 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50/40 p-4">
+              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-xs font-extrabold tracking-[0.12em] text-rose-700">데이터 초기화</p>
-                    <p className="mt-1 text-sm font-bold text-slate-950">전체 기록 삭제</p>
-                    <p className="mt-0.5 text-xs leading-5 text-slate-600">지금까지 수집된 모든 방문 기록과 관심·연결 패턴을 영구 삭제합니다.</p>
+                    <div className="flex items-center gap-2">
+                      <Trash2 className="h-4 w-4 text-rose-500" aria-hidden="true" />
+                      <p className="text-sm font-extrabold text-slate-950">전체 기록 삭제</p>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">지금까지 수집된 모든 방문 기록과 관심·연결 패턴을 영구 삭제합니다.</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setPendingClearAll(true)}
                     disabled={isClearingAll || (visits.length === 0 && candidates.length === 0)}
-                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     전체 기록 삭제

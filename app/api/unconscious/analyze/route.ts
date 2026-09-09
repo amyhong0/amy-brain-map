@@ -33,15 +33,43 @@ export async function POST(request: NextRequest) {
   let run: AnalysisRun | null = null;
 
   try {
+    const body = await request.json().catch(() => ({}));
+    const forceAll = Boolean(body?.forceAll);
+
     const store = await loadUnconsciousStore(userId);
     await pruneExpiredData(userId, store.settings.retentionDays);
     run = await startAnalysisRun(userId);
-    const eligible = store.visits
-      .filter((visit) => visit.lastVisitTime > (store.settings.lastAnalyzedAt ? Date.parse(store.settings.lastAnalyzedAt) : 0))
+
+    // If forceAll is requested, or if no candidates exist in the store yet,
+    // analyze the most recent visits without applying the lastAnalyzedAt timestamp cutoff.
+    const shouldIgnoreCutoff = forceAll || store.candidates.length === 0;
+
+    let eligible = store.visits
       .filter((visit) => !isDomainBlocked(visit.domain, store.policies))
-      .filter((visit) => !isAuthenticationVisit(visit))
+      .filter((visit) => !isAuthenticationVisit(visit));
+
+    if (!shouldIgnoreCutoff && store.settings.lastAnalyzedAt) {
+      const cutoff = Date.parse(store.settings.lastAnalyzedAt);
+      eligible = eligible.filter((visit) => visit.lastVisitTime > cutoff);
+    }
+
+    eligible = eligible
       .sort((a, b) => b.lastVisitTime - a.lastVisitTime)
       .slice(0, store.settings.maxVisitsPerRun);
+
+    if (eligible.length === 0) {
+      const completedRun = await completeAnalysisRun(userId, run.id, 0, 0);
+      const allCandidates = await listCandidates(userId, undefined, 80);
+      return NextResponse.json({
+        success: true,
+        run: completedRun,
+        candidates: allCandidates.map(publicCandidate),
+        analyzedVisits: 0,
+        sessionCount: 0,
+        usedLLM: false,
+        backup: { created: false, unavailable: true },
+      });
+    }
 
     // 1. Sessionize chronological browsing visits
     const sessions = sessionizeVisits(eligible);
@@ -53,7 +81,8 @@ export async function POST(request: NextRequest) {
 
     // 3. Persist discovery candidates
     const candidates = await insertDiscoveryCandidates(userId, extraction.candidates);
-    const completedRun = await completeAnalysisRun(userId, run.id, eligible.length, candidates.length);
+    const maxVisitTime = Math.max(...eligible.map((v) => v.lastVisitTime));
+    const completedRun = await completeAnalysisRun(userId, run.id, eligible.length, candidates.length, maxVisitTime);
     let backup: { created: boolean; archiveId?: string } | { created: false; unavailable: true } = { created: false, unavailable: true };
     try {
       backup = await createBackupIfDue(userId);
@@ -61,10 +90,11 @@ export async function POST(request: NextRequest) {
       // Backups must never block a user's private graph update. Configuration errors stay observable in server logs.
       console.error('GCS backup was skipped:', backupError);
     }
+    const allCandidates = await listCandidates(userId, undefined, 80);
     return NextResponse.json({
       success: true,
       run: completedRun,
-      candidates: candidates.map(publicCandidate),
+      candidates: allCandidates.map(publicCandidate),
       analyzedVisits: eligible.length,
       sessionCount: extraction.sessionCount,
       usedLLM: extraction.usedLLM,

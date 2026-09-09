@@ -17,6 +17,9 @@ const EXTENDED_STOP_WORDS = new Set([
   'overview', 'app', 'console', 'dashboard', '편집', '마이페이지', '내역', '수강신청내역', '내예약관리', '신청내역',
   '알림', '설정', '계정', '로그아웃', '회원가입', '본인인증', '인증', '메시지', '방금', '보냈습니다', '알려드립니다',
   '개인정보', '이용약관', '고객센터', '공지사항', '자주묻는질문', 'qna', 'faq', 'notice', 'support',
+  'search', 'orders', 'campaign', 'view', 'main', 'index',
+  // Domain TLDs & suffixes
+  'kr', 'co', 'io', 'net', 'ai', 'dev', 'me', 'or', 'go', 'edu', 'ac', 'xyz',
   // Dates & numbers
   '2024', '2025', '2026', '2027', '2028', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월',
 ]);
@@ -327,7 +330,7 @@ export async function extractTripletsWithLLM(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'meta/llama-3.1-8b-instruct',
+        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
         temperature: 0.2,
         max_tokens: 1200,
         messages: [

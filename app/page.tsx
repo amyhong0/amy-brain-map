@@ -345,7 +345,11 @@ export default function Home() {
       }
 
       setIsAnalyzing(true);
-      const analysisResponse = await fetch('/api/unconscious/analyze', { method: 'POST', headers: requestHeaders() });
+      const analysisResponse = await fetch('/api/unconscious/analyze', {
+        method: 'POST',
+        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceAll: true }),
+      });
       const analysisData = await analysisResponse.json();
       if (!analysisResponse.ok) throw new Error(analysisData.error || '동기화된 흔적을 분석하지 못했습니다.');
       await loadData();

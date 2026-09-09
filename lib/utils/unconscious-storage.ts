@@ -414,7 +414,13 @@ export async function startAnalysisRun(userId: string): Promise<AnalysisRun> {
   return toRun(rows[0] as DatabaseRow);
 }
 
-export async function completeAnalysisRun(userId: string, runId: string, visitCount: number, candidateCount: number): Promise<AnalysisRun> {
+export async function completeAnalysisRun(
+  userId: string,
+  runId: string,
+  visitCount: number,
+  candidateCount: number,
+  latestVisitTime?: number,
+): Promise<AnalysisRun> {
   const rows = await database().query(
     `UPDATE analysis_runs
      SET status = 'completed', completed_at = NOW(), visit_count = $3, candidate_count = $4
@@ -423,7 +429,10 @@ export async function completeAnalysisRun(userId: string, runId: string, visitCo
     [runId, userId, visitCount, candidateCount],
   );
   if (!rows[0]) throw new Error('Analysis run not found.');
-  await database().query('UPDATE user_settings SET last_analyzed_at = NOW(), updated_at = NOW() WHERE user_id = $1', [userId]);
+  if (visitCount > 0) {
+    const analyzedTime = latestVisitTime ? new Date(latestVisitTime).toISOString() : new Date().toISOString();
+    await database().query('UPDATE user_settings SET last_analyzed_at = $2, updated_at = NOW() WHERE user_id = $1', [userId, analyzedTime]);
+  }
   return toRun(rows[0] as DatabaseRow);
 }
 

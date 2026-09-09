@@ -8,7 +8,7 @@ export interface AgentTrace {
   summary: string;
 }
 
-type QueryMode = 'keyword' | 'recurring_topics' | 'connections' | 'recent_activity' | 'peak_activity';
+type QueryMode = 'keyword' | 'recurring_topics' | 'connections' | 'recent_activity' | 'peak_activity' | 'connection_review';
 
 interface QueryIntent {
   terms: string[];
@@ -31,6 +31,7 @@ const SEMANTIC_QUERY_HINTS: Record<string, string[]> = {
 
 const QUERY_STOP_WORDS = new Set([
   '내가', '내', '것', '중', '관련', '관련해서', '관련한', '관련된', '뭐', '뭐더라', '무엇', '뭐야', '언제', '언제야', '어제', '오늘', '최근', '지난', '이번', '일주일', '동안', '본', '봤', '보았', '열어본', '읽은', '찾아', '알려', '알려줘', '질문', '페이지', '내용', '대해', '에서', '으로', '그리고', '있는', '없는', '주제', '관심', '반복', '반복해서', '자주', '흐름', '연결', '가장', '활발', '활발했', '활발했던', '시점', '때', '기간', 'the', 'and', 'what', 'did', 'i', 'see',
+  '다음', '다음에', '다음으로', '검토', '검토하면', '검토할', '검토해', '검토해줘', '좋은', '좋을까', '좋을지', '추천', '추천해', '추천해줘', '무엇이야', '어떤', '어떤게', '어떤것', '다른', '연결된', '이어지는',
 ]);
 
 function koreanDayStart(dayOffset = 0) {
@@ -67,7 +68,10 @@ function textContainsTerm(text: string, term: string): boolean {
 
 function parseIntent(message: string): QueryIntent {
   const normalized = message.toLocaleLowerCase('ko-KR');
-  const mode: QueryMode = /가장\s*활발|활발했|활발했던|언제.*시점|시점.*언제/.test(normalized)
+  const isConnectionReview = /다음.*(?:검토|추천|살펴)|(?:검토|추천).*연결|연결.*(?:검토|추천)|어떤.*연결/.test(normalized);
+  const mode: QueryMode = isConnectionReview
+    ? 'connection_review'
+    : /가장\s*활발|활발했|활발했던|언제.*시점|시점.*언제/.test(normalized)
     ? 'peak_activity'
     : /반복|자주|되풀이|관심사|관심 주제/.test(normalized)
       ? 'recurring_topics'
@@ -118,7 +122,7 @@ function isPersonalHistoryQuestion(message: string) {
 
 function hasSufficientPrivateEvidence(message: string, intent: QueryIntent, visits: ScoredVisit[], requireHistoryCue: boolean) {
   if (visits.length === 0 || (requireHistoryCue && !isPersonalHistoryQuestion(message))) return false;
-  if (intent.mode === 'recurring_topics' || intent.mode === 'connections' || intent.mode === 'peak_activity') return true;
+  if (intent.mode === 'recurring_topics' || intent.mode === 'connections' || intent.mode === 'peak_activity' || intent.mode === 'connection_review') return true;
   if (intent.terms.length === 0) return false;
   return visits.some(({ visit }) => {
     const searchable = cleanSearchableText(visit);
@@ -257,6 +261,104 @@ function connectionTopicResponse(message: string, visits: ScoredVisit[]) {
   return `기록에서 함께 이어진 관심 흐름은 다음과 같습니다.\n\n${topicLines.join('\n')}`;
 }
 
+function connectionReviewResponse(
+  candidates: DiscoveryCandidate[],
+  visits: BrowserVisit[],
+  filterTerms: string[] = []
+): { text: string; recommendedCandidates: DiscoveryCandidate[]; recommendedVisits: BrowserVisit[] } {
+  const visitById = new Map(visits.map((v) => [v.id, v]));
+  const safeCandidates = candidates.filter((c) => c.status !== 'rejected' && c.sourceDomains.every((domain) => !isAuthenticationDomain(domain)));
+
+  const filteredCandidates = filterTerms.length > 0
+    ? safeCandidates.filter((c) => {
+        const text = `${c.subject} ${c.object} ${c.sourceDomains.join(' ')}`.toLocaleLowerCase('ko-KR');
+        return filterTerms.some((t) => text.includes(t));
+      })
+    : safeCandidates;
+
+  const targetCandidates = filteredCandidates.length > 0 ? filteredCandidates : safeCandidates;
+  const pending = targetCandidates.filter((c) => c.status === 'pending');
+  const approved = targetCandidates.filter((c) => c.status === 'approved' || c.status === 'auto_applied');
+
+  if (pending.length > 0) {
+    const sorted = [...pending].sort((a, b) => {
+      const aBridge = a.kind === 'bridge' ? 2 : 1;
+      const bBridge = b.kind === 'bridge' ? 2 : 1;
+      if (bBridge !== aBridge) return bBridge - aBridge;
+      return b.confidence - a.confidence;
+    });
+    const recommendedCandidates = sorted.slice(0, 3);
+    const recommendedVisits: BrowserVisit[] = [];
+    for (const c of recommendedCandidates) {
+      for (const vid of c.sourceVisitIds) {
+        const v = visitById.get(vid);
+        if (v && !recommendedVisits.some((rv) => rv.id === v.id)) recommendedVisits.push(v);
+      }
+    }
+
+    const lines = recommendedCandidates.map((c, i) => {
+      const type = c.kind === 'bridge' ? '교차 탐색 연결(Bridge)' : '관심 연결';
+      const domains = c.sourceDomains.slice(0, 3).join(' · ');
+      const evidence = c.evidence[0] || `${c.subject} 관련 탐색 흐름`;
+      return `${i + 1}. **${c.subject} ↔ ${c.object}** (${type}, 신뢰도 ${Math.round(c.confidence * 100)}%)\n   - **탐색 맥락**: ${evidence}\n   - **관련 출처**: ${domains}`;
+    });
+
+    const text = `지도에서 다음으로 검토해 볼 만한 새로운 연결 후보는 다음과 같습니다.\n\n${lines.join('\n\n')}\n\n화면 우측 상단의 **'연결 후보 검토'** 패널에서 각 후보를 확인하고 [승인]하시면 지식 지도에 정식 연결선으로 영구 반영됩니다.`;
+    return { text, recommendedCandidates, recommendedVisits };
+  }
+
+  if (approved.length > 0) {
+    const sorted = [...approved].sort((a, b) => {
+      const aDomains = a.sourceDomains.length;
+      const bDomains = b.sourceDomains.length;
+      if (bDomains !== aDomains) return bDomains - aDomains;
+      return b.confidence - a.confidence;
+    });
+
+    const recommendedCandidates: DiscoveryCandidate[] = [];
+    const seenSubjects = new Set<string>();
+    for (const c of sorted) {
+      const key = c.subject.toLocaleLowerCase('ko-KR');
+      if (seenSubjects.has(key)) continue;
+      seenSubjects.add(key);
+      recommendedCandidates.push(c);
+      if (recommendedCandidates.length >= 3) break;
+    }
+
+    const recommendedVisits: BrowserVisit[] = [];
+    for (const c of recommendedCandidates) {
+      for (const vid of c.sourceVisitIds) {
+        const v = visitById.get(vid);
+        if (v && !recommendedVisits.some((rv) => rv.id === v.id)) recommendedVisits.push(v);
+      }
+    }
+
+    const lines = recommendedCandidates.map((c, i) => {
+      const type = c.kind === 'bridge' ? '교차 탐색 연결(Bridge)' : '주요 관심 연결';
+      const domains = c.sourceDomains.slice(0, 3).join(' · ');
+      const evidence = c.evidence[0] || `${c.subject} 중심의 탐색 흐름`;
+      return `${i + 1}. **${c.subject} ↔ ${c.object}** (${type}, 신뢰도 ${Math.round(c.confidence * 100)}%)\n   - **탐색 맥락**: ${evidence}\n   - **연결 도메인**: ${domains}`;
+    });
+
+    const text = `현재 검토 대기 중인 새로운 연결 후보는 모두 지도에 반영(승인 완료)되었습니다.\n\n현재 구성된 지식 지도에서 깊이 있게 살펴보기 좋은 핵심 연결 축은 다음과 같습니다.\n\n${lines.join('\n\n')}\n\n💡 **추가 연결 안내**: 웹 브라우징 활동이 더 누적되면 주기적 탐색 분석을 통해 아직 연결되지 않은 주제 간의 새로운 연결 후보(Bridge)가 자동으로 감지되어 이곳에 검토 대상으로 제안됩니다.`;
+    return { text, recommendedCandidates, recommendedVisits };
+  }
+
+  if (visits.length > 0) {
+    return {
+      text: '현재 지식 지도에 등록된 연결 후보가 없습니다.\n\nChrome 확장 프로그램에서 방문 기록이 충분히 누적된 후 화면 상단의 **[연결 분석 실행]** 버튼을 누르시면 탐색 패턴을 분석하여 새로운 연결 후보를 찾아냅니다.',
+      recommendedCandidates: [],
+      recommendedVisits: visits.slice(0, 3),
+    };
+  }
+
+  return {
+    text: '연결을 검토할 브라우저 기록이 아직 없습니다. Chrome 확장 프로그램에서 방문 기록을 동기화한 뒤 다시 질문해 주세요.',
+    recommendedCandidates: [],
+    recommendedVisits: [],
+  };
+}
+
 function fallbackResponse(
   message: string,
   intent: QueryIntent,
@@ -347,8 +449,74 @@ async function composeWithModel(message: string, intent: QueryIntent, visits: Sc
 export async function runUnconsciousQuery(message: string, visits: BrowserVisit[], candidates: DiscoveryCandidate[], webSearchEnabled = false) {
   const trace: AgentTrace[] = [];
   const intent = parseIntent(message);
-  const modeLabel: Record<QueryMode, string> = { keyword: '키워드 탐색', recurring_topics: '반복 관심 탐색', connections: '연결 탐색', recent_activity: '최근 기록 탐색', peak_activity: '활동 시점 탐색' };
+  const modeLabel: Record<QueryMode, string> = {
+    keyword: '키워드 탐색',
+    recurring_topics: '반복 관심 탐색',
+    connections: '연결 탐색',
+    recent_activity: '최근 기록 탐색',
+    peak_activity: '활동 시점 탐색',
+    connection_review: '연결 검토 추천',
+  };
   trace.push({ agent: '질문 해석자', status: 'completed', summary: `${modeLabel[intent.mode]} · ${intent.terms.join(', ') || '주제어 없이 기록 흐름'} · ${intent.period?.label || '전체 기간'} 조건으로 해석했습니다.` });
+
+  if (intent.mode === 'connection_review') {
+    const reviewResult = connectionReviewResponse(candidates, visits, intent.terms);
+    const highlightedCandidateIds = reviewResult.recommendedCandidates.map((c) => c.id);
+    const highlightedVisitIds = reviewResult.recommendedVisits.map((v) => v.id);
+
+    trace.push({
+      agent: '기억 탐색자',
+      status: 'completed',
+      summary: `기록된 ${candidates.length}개의 연결 후보와 ${visits.length}개의 방문 기록을 검토했습니다.`,
+    });
+    trace.push({
+      agent: '시간 해석자',
+      status: 'completed',
+      summary: '누적된 전체 관심 지도와 최근 탐색 관계를 종합했습니다.',
+    });
+    trace.push({
+      agent: '관계 검증자',
+      status: 'completed',
+      summary: candidates.some((c) => c.status === 'pending')
+        ? `검토 대기 중인 후보 중 우선순위가 높은 ${highlightedCandidateIds.length}개를 선별했습니다.`
+        : `대기 중인 후보가 모두 승인되어, 지도에 반영된 핵심 연결 중 주목할 축 ${highlightedCandidateIds.length}개를 선별했습니다.`,
+    });
+    trace.push({
+      agent: '지도 항해자',
+      status: 'completed',
+      summary: `추천 연결 축 ${highlightedCandidateIds.length}개와 관련 방문 ${highlightedVisitIds.length}개를 지도에서 강조했습니다.`,
+    });
+    trace.push({
+      agent: '응답 구성자',
+      status: 'completed',
+      summary: '연결 후보의 신뢰도와 탐색 맥락을 바탕으로 검토 추천을 구성했습니다.',
+    });
+
+    return {
+      answer: reviewResult.text,
+      intent,
+      matchedVisits: reviewResult.recommendedVisits.map((v) => ({
+        id: v.id,
+        domain: v.domain,
+        title: v.title,
+        lastVisitTime: v.lastVisitTime,
+        visitCount: v.visitCount,
+        score: 1.0,
+      })),
+      matchedCandidates: reviewResult.recommendedCandidates.map((c) => ({
+        ...c,
+        score: 1.0,
+      })),
+      highlightedCandidateIds,
+      highlightedVisitIds,
+      webSearchRequested: false,
+      webSearchAttempted: false,
+      webSearchUsed: false,
+      webSearchConfigured: false,
+      webSources: [],
+      trace,
+    };
+  }
 
   const [retrieved, preliminaryRelationships] = await Promise.all([
     Promise.resolve(rankVisits(visits, intent, intent.mode === 'peak_activity' ? 250 : 8)),

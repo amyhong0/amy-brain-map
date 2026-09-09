@@ -384,4 +384,53 @@ describe('connection-topic summaries', () => {
     expect(result.matchedVisits[0].id).toBe('visit-generic-title');
     expect(result.answer).toContain('Documentation');
   });
+
+  it('recommends pending candidates when user asks what connections to review next', async () => {
+    const pendingBridge = candidate({
+      id: 'candidate-bridge-1',
+      kind: 'bridge',
+      subject: 'Design',
+      object: 'AI Code',
+      confidence: 0.88,
+      status: 'pending',
+      evidence: ['디자인 도구와 AI 코딩 도구를 연이어 사용함'],
+      sourceVisitIds: ['visit-ai-1'],
+      sourceDomains: ['designmd.ai', 'kilo.ai'],
+    });
+
+    const result = await runUnconsciousQuery('다음으로 검토하면 좋은 연결은 무엇이야?', [visit()], [pendingBridge], false);
+
+    expect(result.intent.mode).toBe('connection_review');
+    expect(result.intent.terms).toHaveLength(0);
+    expect(result.highlightedCandidateIds).toEqual(['candidate-bridge-1']);
+    expect(result.answer).toContain('Design ↔ AI Code');
+    expect(result.answer).toContain('교차 탐색 연결(Bridge)');
+    expect(result.answer).toContain('신뢰도 88%');
+    expect(result.answer).toContain('연결 후보 검토');
+    expect(result.trace.find((entry) => entry.agent === '질문 해석자')?.summary).toContain('연결 검토 추천');
+  });
+
+  it('recommends approved connection axes and explains approved status when no pending candidates exist', async () => {
+    const approvedCandidate = candidate({
+      id: 'candidate-approved-1',
+      kind: 'interest',
+      subject: 'Tableau',
+      object: 'tableau.github.io · fda.gov',
+      confidence: 0.85,
+      status: 'approved',
+      evidence: ['데이터 분석 및 시각화 도구 탐색'],
+      sourceVisitIds: ['visit-ai-1'],
+      sourceDomains: ['tableau.github.io', 'fda.gov'],
+    });
+
+    const result = await runUnconsciousQuery('다음으로 검토하면 좋은 연결은 무엇이야?', [visit()], [approvedCandidate], false);
+
+    expect(result.intent.mode).toBe('connection_review');
+    expect(result.intent.terms).toHaveLength(0);
+    expect(result.highlightedCandidateIds).toEqual(['candidate-approved-1']);
+    expect(result.answer).toContain('모두 지도에 반영(승인 완료)되었습니다');
+    expect(result.answer).toContain('Tableau');
+    expect(result.answer).toContain('tableau.github.io');
+    expect(result.answer).not.toContain('ardentnews');
+  });
 });

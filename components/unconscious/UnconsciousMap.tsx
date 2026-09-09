@@ -29,6 +29,7 @@ interface MapNode {
   label: string;
   confidence: number;
   count: number;
+  totalVisits: number;
   candidates: DiscoveryCandidate[];
 }
 
@@ -46,6 +47,7 @@ export interface MapNodeDetail {
   label: string;
   confidence: number;
   candidateCount: number;
+  totalVisits: number;
   candidates: DiscoveryCandidate[];
   connections: Array<{ label: string; score: number }>;
 }
@@ -91,14 +93,23 @@ const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = 
   rejected: { label: '제외됨', color: '#65718a' },
 };
 
+function extractCandidateVisits(candidate: DiscoveryCandidate): number {
+  for (const ev of candidate.evidence || []) {
+    const match = ev.match(/총\s*(\d+)\s*회\s*방문/);
+    if (match) return parseInt(match[1], 10);
+  }
+  return candidate.sourceVisitIds?.length || 1;
+}
+
 function nodeRadius(node: MapNode, degree = 0, totalNodeCount = 24) {
-  const densityScale = Math.max(0.42, Math.min(1.0, Math.sqrt(24 / Math.max(24, totalNodeCount))));
-  const connectionBoost = Math.min(8, degree * 1.4);
-  return Math.min(36, (12 + node.count * 1.8 + node.confidence * 6 + connectionBoost) * densityScale);
+  const densityScale = Math.max(0.45, Math.min(1.0, Math.sqrt(24 / Math.max(24, totalNodeCount))));
+  const connectionBoost = Math.min(7, degree * 1.3);
+  const visitBoost = Math.min(26, Math.sqrt(Math.max(1, node.totalVisits || 1)) * 1.6);
+  return (9 + visitBoost + node.confidence * 4 + connectionBoost) * densityScale;
 }
 
 function nodeImportance(node: MapNode, degree: number) {
-  return degree * 5 + node.count * 2.5 + node.confidence * 8;
+  return degree * 4 + Math.sqrt(node.totalVisits || 1) * 3 + node.confidence * 6;
 }
 
 function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees: Map<string, number>, width: number, height: number): ClusterMindMapLayout {
@@ -431,13 +442,15 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     const grouped = new Map<string, MapNode>();
     const addNodeCandidate = (label: string, candidate: DiscoveryCandidate) => {
       const id = topicNodeId(label);
+      const visits = extractCandidateVisits(candidate);
       const existing = grouped.get(id);
       if (existing) {
         existing.count += 1;
+        existing.totalVisits = Math.max(existing.totalVisits, visits);
         existing.confidence = Math.max(existing.confidence, candidate.confidence);
         existing.candidates.push(candidate);
       } else {
-        grouped.set(id, { id, label: readableTopicLabel(label), confidence: candidate.confidence, count: 1, candidates: [candidate] });
+        grouped.set(id, { id, label: readableTopicLabel(label), confidence: candidate.confidence, count: 1, totalVisits: visits, candidates: [candidate] });
       }
     };
 
@@ -452,7 +465,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         const rightHighlighted = right.candidates.some((c) => highlighted.has(c.id)) || evidenceRelatedNodeIds.has(right.id);
         if (leftHighlighted && !rightHighlighted) return -1;
         if (!leftHighlighted && rightHighlighted) return 1;
-        return right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR');
+        return (right.totalVisits - left.totalVisits) || (right.confidence - left.confidence) || left.label.localeCompare(right.label, 'ko-KR');
       });
     const nodeIds = new Set(graphNodes.map((node) => node.id));
     const edgesByPair = new Map<string, MapEdge>();
@@ -568,6 +581,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     label: node.label,
     confidence: node.confidence,
     candidateCount: node.candidates.length,
+    totalVisits: node.totalVisits,
     candidates: node.candidates,
     connections: edges.filter((edge) => edge.source === node.id || edge.target === node.id)
       .map((edge) => ({ label: nodes.find((item) => item.id === (edge.source === node.id ? edge.target : edge.source))?.label || '알 수 없는 관심', score: edge.score }))
@@ -645,7 +659,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-200">Cognitive graph</p>
             <h2 className="mt-1 text-lg font-extrabold text-slate-950">관심 그래프</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">색상 원은 관심 주제이고, 선은 함께 살펴본 기록에서 확인한 연결입니다.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">원의 크기는 탐색 빈도와 관심의 깊이를 나타내며, 선은 함께 살펴본 기록의 연결입니다.</p>
           </div>
         </div>
         <div className="aether-map-tab-shell inline-flex rounded-xl border p-1" aria-label="지도 보기 범위">
@@ -718,16 +732,17 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                   const isDimmed = (hasHighlightedNodes && !isHighlighted && !isSelected) || (connectionFocusId !== null && !isConnectionFocused);
                   const degree = degrees.get(node.id) || 0;
                   const cluster = clusterByNode.get(node.id);
-                  const densityScale = Math.max(0.42, Math.min(1.0, Math.sqrt(24 / Math.max(24, nodes.length))));
-                  const baseRadius = Math.max(3.5, Math.min(12.5, nodeRadius(node, degree, nodes.length) * 0.32));
-                  const radius = isHighlighted ? Math.max(baseRadius * 1.85, 13) : baseRadius;
+                  const densityScale = Math.max(0.45, Math.min(1.0, Math.sqrt(24 / Math.max(24, nodes.length))));
+                  const rawRadius = nodeRadius(node, degree, nodes.length);
+                  const baseRadius = Math.max(5.5, Math.min(22, rawRadius * 0.48));
+                  const radius = isHighlighted ? Math.max(baseRadius * 1.55, 14) : baseRadius;
                   const color = isHighlighted ? '#38bdf8' : cluster?.color.stroke || STATUS_STYLE[statusFor(node)].color;
                   const labelLimit = isHighlighted ? 30 : 18;
                   const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
                   const sway = reedSway(point, pointer);
                   const detail = detailForNode(node);
                   return (
-                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 정보 열기`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (candidate) onSelect(candidate, detail); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (candidate) onSelect(candidate, detail); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
+                    <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, 누적 방문 ${node.totalVisits}회, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 정보 열기`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (candidate) onSelect(candidate, detail); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (candidate) onSelect(candidate, detail); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
                       <circle cx={point.x} cy={point.y} r={Math.max(radius + 7, 15)} fill="transparent" pointerEvents="all" />
                       {isHighlighted && (
                         <>
@@ -768,7 +783,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     </g>
                   );
                 })}
-                {selectedNodeDetail && selectedNodePoint && <foreignObject x={popoverX} y={popoverY} width={popoverWidth} height={popoverHeight} pointerEvents="all"><div data-graph-popover="true" role="dialog" aria-label={`${selectedNodeDetail.label} 상세 정보`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="rounded-2xl border border-slate-200 bg-slate-950/95 p-3.5 text-slate-100 shadow-2xl shadow-black/45 backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[9px] font-extrabold tracking-[0.15em] text-blue-300">NODE DETAIL</p><h3 className="mt-1 truncate text-sm font-extrabold text-white">{selectedNodeDetail.label}</h3></div><button type="button" onClick={() => onClearHighlights?.()} aria-label={`${selectedNodeDetail.label} 상세 정보 닫기`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">상태</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.candidates.some((candidate) => candidate.status === 'approved' || candidate.status === 'auto_applied') ? '반영됨' : '검토'}</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">연결</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.connections.length}개</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">신뢰도</p><p className="mt-0.5 text-[10px] font-bold text-white">{Math.round(selectedNodeDetail.confidence * 100)}%</p></div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">연결된 관심</p><div className="mt-1.5 flex flex-wrap gap-1">{selectedNodeDetail.connections.length ? selectedNodeDetail.connections.slice(0, 4).map((connection) => <span key={connection.label} className="rounded-full bg-blue-400/15 px-2 py-1 text-[9px] font-semibold text-blue-100">{connection.label} <span className="text-blue-300">{Math.round(connection.score * 100)}%</span></span>) : <span className="text-[10px] text-slate-400">직접 연결 없음</span>}</div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">탐색 근거</p><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-300">{selectedNodeDetail.candidates.flatMap((candidate) => candidate.evidence).find(Boolean) || '반복 탐색 기록을 근거로 확인되었습니다.'}</p></div>{onRequestRemove && <button type="button" aria-haspopup="dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRequestRemove(selectedNodeDetail); }} className="mt-3 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-rose-200 transition hover:bg-rose-400/15 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Trash2 className="h-3 w-3" aria-hidden="true" />지도에서 제거</button>}</div></foreignObject>}
+                {selectedNodeDetail && selectedNodePoint && <foreignObject x={popoverX} y={popoverY} width={popoverWidth} height={popoverHeight} pointerEvents="all"><div data-graph-popover="true" role="dialog" aria-label={`${selectedNodeDetail.label} 상세 정보`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="rounded-2xl border border-slate-200 bg-slate-950/95 p-3.5 text-slate-100 shadow-2xl shadow-black/45 backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[9px] font-extrabold tracking-[0.15em] text-blue-300">NODE DETAIL</p><h3 className="mt-1 truncate text-sm font-extrabold text-white">{selectedNodeDetail.label}</h3></div><button type="button" onClick={() => onClearHighlights?.()} aria-label={`${selectedNodeDetail.label} 상세 정보 닫기`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">방문 빈도</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.totalVisits}회</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">연결</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.connections.length}개</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">신뢰도</p><p className="mt-0.5 text-[10px] font-bold text-white">{Math.round(selectedNodeDetail.confidence * 100)}%</p></div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">연결된 관심</p><div className="mt-1.5 flex flex-wrap gap-1">{selectedNodeDetail.connections.length ? selectedNodeDetail.connections.slice(0, 4).map((connection) => <span key={connection.label} className="rounded-full bg-blue-400/15 px-2 py-1 text-[9px] font-semibold text-blue-100">{connection.label} <span className="text-blue-300">{Math.round(connection.score * 100)}%</span></span>) : <span className="text-[10px] text-slate-400">직접 연결 없음</span>}</div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">탐색 근거</p><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-300">{selectedNodeDetail.candidates.flatMap((candidate) => candidate.evidence).find(Boolean) || '반복 탐색 기록을 근거로 확인되었습니다.'}</p></div>{onRequestRemove && <button type="button" aria-haspopup="dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRequestRemove(selectedNodeDetail); }} className="mt-3 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-rose-200 transition hover:bg-rose-400/15 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Trash2 className="h-3 w-3" aria-hidden="true" />지도에서 제거</button>}</div></foreignObject>}
               </g>
             </svg>
             {visibleEdges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}

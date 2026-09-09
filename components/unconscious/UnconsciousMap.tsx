@@ -422,6 +422,15 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const highlighted = new Set(highlightedIds);
   const highlightedVisitKey = highlightedVisits.map((visit) => `${visit.id}:${visit.domain}`).sort().join('|');
 
+  const evidenceRelatedNodeIds = useMemo(() => {
+    if (highlightedVisits.length === 0) return new Set<string>();
+    const evidenceVisitIds = new Set(highlightedVisits.map((visit) => visit.id));
+    const evidenceDomains = new Set(highlightedVisits.map((visit) => visit.domain));
+    return new Set(candidates
+      .filter((candidate) => candidate.sourceVisitIds.some((id) => evidenceVisitIds.has(id)) || candidate.sourceDomains.some((domain) => evidenceDomains.has(domain)))
+      .map((candidate) => topicNodeId(candidate.subject)));
+  }, [candidates, highlightedVisitKey]);
+
   const { nodes, edges } = useMemo(() => {
     const visible = candidates.filter((candidate) => {
       if (view === 'pending') return candidate.status === 'pending';
@@ -448,8 +457,14 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
     }
 
     const graphNodes = [...grouped.values()]
-      .sort((left, right) => right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR'))
-      .slice(0, 18);
+      .sort((left, right) => {
+        const leftHighlighted = left.candidates.some((c) => highlighted.has(c.id)) || evidenceRelatedNodeIds.has(left.id);
+        const rightHighlighted = right.candidates.some((c) => highlighted.has(c.id)) || evidenceRelatedNodeIds.has(right.id);
+        if (leftHighlighted && !rightHighlighted) return -1;
+        if (!leftHighlighted && rightHighlighted) return 1;
+        return right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR');
+      })
+      .slice(0, 36);
     const nodeIds = new Set(graphNodes.map((node) => node.id));
     const edgesByPair = new Map<string, MapEdge>();
 
@@ -486,17 +501,8 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       }
     }
 
-    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 20) };
-  }, [candidates, view]);
-
-  const evidenceRelatedNodeIds = useMemo(() => {
-    if (highlightedVisits.length === 0) return new Set<string>();
-    const evidenceVisitIds = new Set(highlightedVisits.map((visit) => visit.id));
-    const evidenceDomains = new Set(highlightedVisits.map((visit) => visit.domain));
-    return new Set(nodes
-      .filter((node) => node.candidates.some((candidate) => candidate.sourceVisitIds.some((id) => evidenceVisitIds.has(id)) || candidate.sourceDomains.some((domain) => evidenceDomains.has(domain))))
-      .map((node) => node.id));
-  }, [nodes, highlightedVisitKey]);
+    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 36) };
+  }, [candidates, view, highlighted, evidenceRelatedNodeIds]);
 
   const width = 980;
   const height = 620;

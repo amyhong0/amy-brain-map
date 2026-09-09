@@ -53,7 +53,7 @@ function cleanSearchableText(visit: BrowserVisit): string {
   } catch {
     path = visit.normalizedUrl || '';
   }
-  return `${visit.title} ${visit.title} ${visit.domain} ${path}`.toLocaleLowerCase('ko-KR');
+  return `${visit.title} ${visit.title} ${visit.description || ''} ${visit.domain} ${path}`.toLocaleLowerCase('ko-KR');
 }
 
 function textContainsTerm(text: string, term: string): boolean {
@@ -321,7 +321,7 @@ async function composeWithModel(message: string, intent: QueryIntent, visits: Sc
     period: intent.period?.label || '전체 기간',
     queryTerms: intent.terms,
     queryMode: intent.mode,
-    visits: visits.map(({ visit }) => ({ title: visit.title, domain: visit.domain, visitedAt: new Date(visit.lastVisitTime).toISOString(), visitCount: visit.visitCount })),
+    visits: visits.map(({ visit }) => ({ title: visit.title, description: visit.description || undefined, domain: visit.domain, visitedAt: new Date(visit.lastVisitTime).toISOString(), visitCount: visit.visitCount })),
     connections: candidates.map(({ candidate }) => ({ subject: candidate.subject, relation: candidate.relation, object: candidate.object, confidence: candidate.confidence, evidence: candidate.evidence })),
     webSearchSummary,
     webSources: webSources.map((source) => ({ title: source.title, url: source.url, snippet: source.snippet })),

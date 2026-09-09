@@ -54,6 +54,7 @@ function historyItem(item) {
   return {
     url: item.url,
     title: (item.title || '').slice(0, 300),
+    description: (item.description || '').slice(0, 500),
     lastVisitTime,
     visitCount: Math.max(1, Math.floor(Number(item.visitCount || 1))),
   };
@@ -309,6 +310,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
+    if (message.type === 'page-meta') {
+      if (message.url && message.description) {
+        await enqueue([{
+          url: message.url,
+          title: message.title || '',
+          description: message.description,
+          lastVisitTime: Date.now(),
+          visitCount: 1,
+        }]);
+      }
+      sendResponse({ success: true });
+      return;
+    }
     if (message.type === 'get-state') {
       const state = await chrome.storage.local.get(STATE_KEY);
       const settings = await getSettings();

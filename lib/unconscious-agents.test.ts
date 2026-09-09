@@ -367,4 +367,21 @@ describe('connection-topic summaries', () => {
     expect(result.answer).not.toContain('accounts.goorm.io');
     expect(result.answer).not.toContain('연결 가설');
   });
+
+  it('successfully retrieves visits when query term is found in description rather than title', async () => {
+    const visitWithDesc = visit({
+      id: 'visit-generic-title',
+      title: 'Documentation',
+      description: 'Generative AI and Agentic LLM developer guide for production systems.',
+      domain: 'developer.nvidia.com',
+      normalizedUrl: 'https://developer.nvidia.com/docs',
+      url: 'https://developer.nvidia.com/docs',
+    });
+
+    const result = await runUnconsciousQuery('LLM 관련 기록이 뭐야?', [visitWithDesc], [], false);
+
+    expect(result.matchedVisits).toHaveLength(1);
+    expect(result.matchedVisits[0].id).toBe('visit-generic-title');
+    expect(result.answer).toContain('Documentation');
+  });
 });

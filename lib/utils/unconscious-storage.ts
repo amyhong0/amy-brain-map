@@ -12,6 +12,7 @@ export interface BrowserVisit {
   normalizedUrl: string;
   url: string;
   title: string;
+  description?: string;
   domain: string;
   lastVisitTime: number;
   visitCount: number;
@@ -77,6 +78,7 @@ export interface IncomingStoredVisit {
   normalizedUrl: string;
   url: string;
   title: string;
+  description?: string;
   domain: string;
   lastVisitTime: number;
   visitCount: number;
@@ -136,6 +138,7 @@ function toVisit(row: DatabaseRow): BrowserVisit {
     normalizedUrl: String(row.normalized_url),
     url: String(row.url),
     title: String(row.title || ''),
+    description: String(row.description || ''),
     domain: String(row.domain),
     lastVisitTime: asNumber(row.last_visit_time),
     visitCount: asNumber(row.visit_count, 1),
@@ -201,6 +204,8 @@ function toSettings(row: DatabaseRow | undefined): UnconsciousSettings {
 /** Initializes a new user's privacy defaults. User identity itself must already be authenticated and stored. */
 export async function ensureUnconsciousUserState(userId: string): Promise<void> {
   const sql = database();
+  // Ensure description column exists on browser_visits
+  await sql.query(`ALTER TABLE browser_visits ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';`).catch(() => {});
   // 기본 차단 규칙은 사용자 상태가 처음 만들어질 때만 추가한다.
   // 이후 사용자가 규칙을 삭제하면, 설정을 읽는 과정에서 삭제한 규칙이 다시 생성되어서는 안 된다.
   await sql.query(
@@ -313,9 +318,11 @@ export async function ingestBrowserVisits(userId: string, installationRecordId: 
       continue;
     }
     const newer = visit.lastVisitTime >= existing.lastVisitTime ? visit : existing;
+    const description = newer.description || existing.description || visit.description || '';
     mergedVisits.set(visit.normalizedUrl, {
       ...newer,
       title: newer.title || existing.title || visit.title,
+      description,
       lastVisitTime: Math.max(existing.lastVisitTime, visit.lastVisitTime),
       visitCount: Math.max(existing.visitCount, visit.visitCount),
     });
@@ -329,18 +336,19 @@ export async function ingestBrowserVisits(userId: string, installationRecordId: 
     return sql.query(
       `INSERT INTO browser_visits (
         id, user_id, installation_id, normalized_url, url, title, domain, last_visit_time,
-        visit_count, received_at, updated_at, content_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), $10)
+        visit_count, received_at, updated_at, content_status, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), $10, $11)
       ON CONFLICT (user_id, normalized_url) DO UPDATE SET
         installation_id = EXCLUDED.installation_id,
         url = EXCLUDED.url,
         title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE browser_visits.title END,
+        description = CASE WHEN EXCLUDED.description <> '' THEN EXCLUDED.description ELSE browser_visits.description END,
         last_visit_time = GREATEST(browser_visits.last_visit_time, EXCLUDED.last_visit_time),
         visit_count = GREATEST(browser_visits.visit_count, EXCLUDED.visit_count),
         content_status = EXCLUDED.content_status,
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted`,
-      [createId('visit'), userId, installationRecordId, visit.normalizedUrl, visit.url, visit.title, visit.domain, visit.lastVisitTime, visit.visitCount, contentStatus],
+      [createId('visit'), userId, installationRecordId, visit.normalizedUrl, visit.url, visit.title, visit.domain, visit.lastVisitTime, visit.visitCount, contentStatus, visit.description || ''],
     );
   });
 
@@ -555,6 +563,7 @@ export function safeVisitView(visit: BrowserVisit) {
     id: visit.id,
     domain: visit.domain,
     title: visit.title,
+    description: visit.description || '',
     lastVisitTime: visit.lastVisitTime,
     visitCount: visit.visitCount,
     contentStatus: visit.contentStatus,

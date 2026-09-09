@@ -148,7 +148,7 @@ export function extractTripletsFallback(
   for (const session of sessions) {
     const sessionTerms = new Set<string>();
     for (const v of session.visits) {
-      const terms = extractMeaningfulTerms(`${v.title} ${v.domain}`);
+      const terms = extractMeaningfulTerms(`${v.title} ${v.description || ''} ${v.domain}`);
       for (const t of terms) {
         sessionTerms.add(t);
         const stat = termStats.get(t) || { visits: [], domains: new Set(), totalCount: 0, sessions: new Set() };
@@ -277,7 +277,11 @@ export async function extractTripletsWithLLM(
   // Prepare condensed sessions summary for LLM prompt
   const sessionSummaries = sessions.slice(0, 12).map((sess, idx) => {
     const titles = sess.visits
-      .map((v) => cleanTitleText(v.title))
+      .map((v) => {
+        const clean = cleanTitleText(v.title);
+        const desc = v.description ? ` (${v.description.slice(0, 100)})` : '';
+        return `${clean}${desc}`;
+      })
       .filter((t) => t.length > 2)
       .slice(0, 5);
     return {

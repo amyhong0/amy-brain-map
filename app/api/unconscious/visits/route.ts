@@ -13,10 +13,12 @@ export const runtime = 'nodejs';
 
 const MAX_BATCH_SIZE = 1_000;
 const MAX_TITLE_LENGTH = 300;
+const MAX_DESCRIPTION_LENGTH = 1_000;
 
 interface IncomingVisit {
   url?: unknown;
   title?: unknown;
+  description?: unknown;
   lastVisitTime?: unknown;
   visitCount?: unknown;
 }
@@ -29,6 +31,7 @@ function parseVisit(input: IncomingVisit) {
     ...normalized,
     url: input.url,
     title: typeof input.title === 'string' ? input.title.trim().slice(0, MAX_TITLE_LENGTH) : '',
+    description: typeof input.description === 'string' ? input.description.trim().slice(0, MAX_DESCRIPTION_LENGTH) : '',
     lastVisitTime: typeof input.lastVisitTime === 'number' && Number.isFinite(input.lastVisitTime)
       ? Math.max(0, Math.floor(input.lastVisitTime))
       : Date.now(),

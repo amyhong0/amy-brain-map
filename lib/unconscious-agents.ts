@@ -24,13 +24,13 @@ interface ScoredVisit {
 const SEMANTIC_QUERY_HINTS: Record<string, string[]> = {
   '뇌': ['brain', 'cognitive', 'neural', 'neuroscience'],
   '브레인': ['brain', 'cognitive', 'neural'],
-  'ai': ['openai', 'gpt', 'llm', 'agent', 'gemini', 'claude', 'copilot'],
-  '콘텐츠': ['content', 'creator', 'video', 'image', 'media', 'design', 'story'],
-  '제작': ['create', 'creator', 'builder', 'production', 'generate', 'api', 'workflow'],
+  'ai': ['ai', '인공지능', '생성형', 'generative', 'openai', 'chatgpt', 'gpt', 'llm', 'gemini', 'claude', 'copilot', 'agent', '에이전트'],
+  '콘텐츠': ['content', 'contents', 'creator', 'media', '글쓰기', '보고서', '영상', '이미지', '작성', '발행'],
+  '제작': ['만들기', '제작', '생성', '창작', 'create', 'creator', 'builder', 'production', 'generate', 'maker', 'making'],
 };
 
 const QUERY_STOP_WORDS = new Set([
-  '내가', '내', '것', '중', '관련', '관련해서', '관련한', '관련된', '뭐', '뭐더라', '무엇', '뭐야', '언제', '언제야', '어제', '오늘', '최근', '지난', '이번', '일주일', '동안', '본', '봤', '보았', '열어본', '읽은', '찾아', '알려', '알려줘', '질문', '페이지', '콘텐츠', '내용', '대해', '에서', '으로', '그리고', '있는', '없는', '주제', '관심', '반복', '반복해서', '자주', '흐름', '연결', '가장', '활발', '활발했', '활발했던', '시점', '때', '기간', 'the', 'and', 'what', 'did', 'i', 'see',
+  '내가', '내', '것', '중', '관련', '관련해서', '관련한', '관련된', '뭐', '뭐더라', '무엇', '뭐야', '언제', '언제야', '어제', '오늘', '최근', '지난', '이번', '일주일', '동안', '본', '봤', '보았', '열어본', '읽은', '찾아', '알려', '알려줘', '질문', '페이지', '내용', '대해', '에서', '으로', '그리고', '있는', '없는', '주제', '관심', '반복', '반복해서', '자주', '흐름', '연결', '가장', '활발', '활발했', '활발했던', '시점', '때', '기간', 'the', 'and', 'what', 'did', 'i', 'see',
 ]);
 
 function koreanDayStart(dayOffset = 0) {
@@ -43,6 +43,26 @@ function koreanDayStart(dayOffset = 0) {
 
 function normalizeQueryTerm(term: string) {
   return term.replace(/(으로|에서|에게|부터|까지|처럼|보다|은|는|이|가|을|를|와|과|의|에|도|만)$/u, '');
+}
+
+function cleanSearchableText(visit: BrowserVisit): string {
+  let path = '';
+  try {
+    const u = new URL(visit.url || visit.normalizedUrl);
+    path = decodeURIComponent(u.pathname);
+  } catch {
+    path = visit.normalizedUrl || '';
+  }
+  return `${visit.title} ${visit.title} ${visit.domain} ${path}`.toLocaleLowerCase('ko-KR');
+}
+
+function textContainsTerm(text: string, term: string): boolean {
+  if (!text || !term) return false;
+  if (/^[a-z0-9_-]{1,4}$/i.test(term)) {
+    const regex = new RegExp(`(?:^|[^a-z0-9])${term}(?:[^a-z0-9]|$)`, 'i');
+    return regex.test(text);
+  }
+  return text.includes(term);
 }
 
 function parseIntent(message: string): QueryIntent {
@@ -70,20 +90,25 @@ function parseIntent(message: string): QueryIntent {
 }
 
 function matchesQueryTerm(searchable: string, term: string) {
-  if (searchable.includes(term)) return true;
-  return (SEMANTIC_QUERY_HINTS[term] || []).some((hint) => searchable.includes(hint));
+  if (textContainsTerm(searchable, term)) return true;
+  return (SEMANTIC_QUERY_HINTS[term] || []).some((hint) => textContainsTerm(searchable, hint));
 }
 
-function scoreVisit(visit: BrowserVisit, intent: QueryIntent): ScoredVisit | null {
-  if (intent.period && (visit.lastVisitTime < intent.period.start || visit.lastVisitTime >= intent.period.end)) return null;
-  const searchable = `${visit.title} ${visit.domain} ${visit.normalizedUrl}`.toLocaleLowerCase('ko-KR');
+function scoreVisit(visit: BrowserVisit, intent: QueryIntent, ignorePeriod = false): ScoredVisit | null {
+  if (isAuthenticationVisit(visit)) return null;
+  if (!ignorePeriod && intent.period && (visit.lastVisitTime < intent.period.start || visit.lastVisitTime >= intent.period.end)) return null;
+
+  const searchable = cleanSearchableText(visit);
   const matchedTerms = intent.terms.filter((term) => matchesQueryTerm(searchable, term));
   const isDiscoveryIntent = intent.mode !== 'keyword' && intent.terms.length === 0;
-  const queryScore = isDiscoveryIntent ? 0.24 : intent.terms.length === 0 ? 0.3 : matchedTerms.length / intent.terms.length;
+  if (intent.terms.length > 0 && matchedTerms.length === 0) return null;
+
+  const queryScore = isDiscoveryIntent ? 0.24 : intent.terms.length === 0 ? 0.3 : (matchedTerms.length / intent.terms.length) * 1.5;
   const recurrenceScore = Math.min(visit.visitCount, 12) * (intent.mode === 'recurring_topics' ? 0.09 : intent.mode === 'peak_activity' ? 0.08 : 0.04);
   const recencyScore = Math.max(0, 0.18 - (Date.now() - visit.lastVisitTime) / (1000 * 60 * 60 * 24 * 365) * 0.18);
-  const score = queryScore + recurrenceScore + recencyScore;
-  if (intent.terms.length > 0 && matchedTerms.length === 0) return null;
+  const inPeriod = !intent.period || (visit.lastVisitTime >= intent.period.start && visit.lastVisitTime < intent.period.end);
+  const periodScore = inPeriod && intent.period ? 0.5 : 0;
+  const score = queryScore + recurrenceScore + recencyScore + periodScore;
   return { visit, score };
 }
 
@@ -96,15 +121,15 @@ function hasSufficientPrivateEvidence(message: string, intent: QueryIntent, visi
   if (intent.mode === 'recurring_topics' || intent.mode === 'connections' || intent.mode === 'peak_activity') return true;
   if (intent.terms.length === 0) return false;
   return visits.some(({ visit }) => {
-    const searchable = `${visit.title} ${visit.domain} ${visit.normalizedUrl}`.toLocaleLowerCase('ko-KR');
-    const coverage = intent.terms.filter((term) => matchesQueryTerm(searchable, term)).length / intent.terms.length;
-    return coverage >= (intent.terms.length === 1 ? 1 : 0.67);
+    const searchable = cleanSearchableText(visit);
+    const matchedCount = intent.terms.filter((term) => matchesQueryTerm(searchable, term)).length;
+    return matchedCount >= (intent.terms.length === 1 ? 1 : Math.min(2, Math.ceil(intent.terms.length * 0.5)));
   });
 }
 
-function rankVisits(visits: BrowserVisit[], intent: QueryIntent, limit = 8) {
+function rankVisits(visits: BrowserVisit[], intent: QueryIntent, limit = 8, ignorePeriod = false) {
   const deduplicated = new Map<string, ScoredVisit>();
-  for (const entry of visits.filter((visit) => !isAuthenticationVisit(visit)).map((visit) => scoreVisit(visit, intent)).filter((entry): entry is ScoredVisit => Boolean(entry))) {
+  for (const entry of visits.filter((visit) => !isAuthenticationVisit(visit)).map((visit) => scoreVisit(visit, intent, ignorePeriod)).filter((entry): entry is ScoredVisit => Boolean(entry))) {
     const key = `${entry.visit.domain}::${readableVisitLabel(entry.visit).toLocaleLowerCase('ko-KR')}`;
     const previous = deduplicated.get(key);
     if (!previous) {
@@ -232,34 +257,61 @@ function connectionTopicResponse(message: string, visits: ScoredVisit[]) {
   return `기록에서 함께 이어진 관심 흐름은 다음과 같습니다.\n\n${topicLines.join('\n')}`;
 }
 
-function fallbackResponse(message: string, intent: QueryIntent, visits: ScoredVisit[], candidates: Array<{ candidate: DiscoveryCandidate; score: number }>, webSources: WebSearchSource[], webAnswer?: string) {
+function fallbackResponse(
+  message: string,
+  intent: QueryIntent,
+  visits: ScoredVisit[],
+  candidates: Array<{ candidate: DiscoveryCandidate; score: number }>,
+  webSources: WebSearchSource[],
+  webAnswer?: string,
+  broaderVisits: ScoredVisit[] = [],
+) {
   if (visits.length === 0 && (webSources.length > 0 || webAnswer)) {
     if (webAnswer) return `웹 검색으로 보강한 답변입니다.\n\n${webAnswer}\n\n아래에서 답변에 참고한 출처를 확인할 수 있습니다.`;
     return '개인 방문 기록에는 직접 근거가 없어 웹 검색으로 보강했습니다. 아래 출처의 내용을 바탕으로 답변을 구성했습니다.';
   }
+  const topic = readableTopicLabel(message, intent);
+  const periodText = intent.period ? `${intent.period.label} ` : '';
+
   if (visits.length === 0) {
-    const periodText = intent.period ? `${intent.period.label} ` : '';
+    if (intent.period && broaderVisits.length > 0) {
+      const topRecent = broaderVisits.slice(0, 3);
+      const recentLines = topRecent.map(({ visit }, idx) => `${idx + 1}. **${readableVisitLabel(visit)}** — ${visit.domain}에서 ${visit.visitCount}회 확인`).join('\n');
+      return `${intent.period.label} 기록에는 직접 일치하는 항목이 없으나, 최근 기록에서 **${topic}**와 직접 관련된 다음 페이지를 확인했습니다.\n\n${recentLines}`;
+    }
     if (intent.mode === 'recurring_topics') return `${periodText}기록이 아직 없어 반복 관심을 정리하기 어렵습니다. Chrome 기록을 동기화한 뒤 다시 물어보면 방문 횟수와 주제를 기준으로 보여 드릴게요.`;
     if (intent.mode === 'peak_activity') return `${periodText}기록이 아직 없어 가장 활발했던 시점을 계산하기 어렵습니다. Chrome 기록을 동기화한 뒤 다시 물어보면 날짜별 방문 신호를 비교해 보여 드릴게요.`;
     if (intent.mode === 'connections') return `${periodText}기록에서 연결을 판단할 공통 탐색 근거를 아직 찾지 못했습니다. 방문 기록이 더 쌓이면 같은 페이지·도메인·탐색 흐름을 기준으로 연결을 찾아 드릴게요.`;
     return `${periodText}기록에서 “${intent.terms.join(' · ') || message}”와 직접 맞는 방문 흔적을 찾지 못했습니다. 다른 표현으로 다시 물어보거나, Chrome 확장 프로그램의 동기화 상태를 확인해 보세요.`;
   }
-  const periodText = intent.period ? `${intent.period.label} ` : '';
+
   if (intent.mode === 'peak_activity') return peakActivityResponse(visits) || `${periodText}기록에서 활동 시점을 정리할 근거를 찾지 못했습니다.`;
   if (intent.mode === 'recurring_topics') {
     const topics = buildTopicSummaries(visits, candidates);
-    const topicLines = topics.map((topic, index) => {
-      const pages = topic.pages.map((page) => `${readableVisitLabel(page)} (${page.domain})`).join(' · ');
-      return `${index + 1}. ${topic.label}\n   관련 페이지: ${pages}`;
+    const topicLines = topics.map((item, index) => {
+      const pages = item.pages.map((page) => `${readableVisitLabel(page)} (${page.domain})`).join(' · ');
+      return `${index + 1}. ${item.label}\n   관련 페이지: ${pages}`;
     });
     return `${periodText}기록에서 반복적으로 나타난 관심은 다음과 같습니다.\n\n${topicLines.join('\n\n')}`;
   }
   if (intent.mode === 'connections') {
     return `${periodText}${connectionTopicResponse(message, visits)}`;
   }
-  const topic = readableTopicLabel(message, intent);
+
   const relevantPages = [...new Map(visits.map(({ visit }) => [visit.normalizedUrl, visit])).values()].slice(0, 3);
   const pageLines = relevantPages.map((visit, index) => `${index + 1}. **${readableVisitLabel(visit)}** — ${visit.domain}에서 ${visit.visitCount}회 확인`).join('\n');
+
+  if (intent.period && broaderVisits.length > 0) {
+    const additionalPages = broaderVisits
+      .map(({ visit }) => visit)
+      .filter((v) => !relevantPages.some((rp) => rp.normalizedUrl === v.normalizedUrl))
+      .slice(0, 2);
+    if (additionalPages.length > 0) {
+      const additionalLines = additionalPages.map((v) => `- **${readableVisitLabel(v)}** (${v.domain})`).join('\n');
+      return `${periodText}기록에서 **${topic}**와 관련해 다음 페이지를 확인했습니다.\n\n${pageLines}\n\n함께 진행하신 직전 최근 탐색에서도 관련 페이지가 확인됩니다:\n${additionalLines}`;
+    }
+  }
+
   return `${periodText}기록에서 **${topic}**와 관련해 다음 페이지를 확인했습니다.\n\n${pageLines}`;
 }
 
@@ -278,7 +330,7 @@ async function composeWithModel(message: string, intent: QueryIntent, visits: Sc
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'meta/llama-3.1-8b-instruct',
+      model: 'nvidia/llama-3.1-nemotron-70b-instruct',
       temperature: 0.3,
       max_tokens: 800,
       messages: [
@@ -302,8 +354,10 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
     Promise.resolve(rankVisits(visits, intent, intent.mode === 'peak_activity' ? 250 : 8)),
     Promise.resolve(rankCandidates(candidates, intent, [])),
   ]);
-  const usePrivateEvidence = hasSufficientPrivateEvidence(message, intent, retrieved, webSearchEnabled);
-  const evidenceVisits = usePrivateEvidence ? retrieved : [];
+  const broaderRetrieved = intent.period ? rankVisits(visits, intent, 8, true) : [];
+  const primaryCandidates = retrieved.length > 0 ? retrieved : broaderRetrieved;
+  const usePrivateEvidence = hasSufficientPrivateEvidence(message, intent, primaryCandidates, webSearchEnabled);
+  const evidenceVisits = usePrivateEvidence ? primaryCandidates : [];
   trace.push({ agent: '기억 탐색자', status: usePrivateEvidence ? 'completed' : 'fallback', summary: usePrivateEvidence ? `${evidenceVisits.length}개의 방문 흔적을 시간·키워드·재방문 신호로 선별했습니다.` : (retrieved.length > 0 ? '제목의 일부 단어만 겹치는 방문 기록은 질문 근거로 사용하지 않았습니다.' : '질문과 직접 맞는 방문 흔적을 찾지 못했습니다.') });
   trace.push({ agent: '시간 해석자', status: 'completed', summary: intent.period ? `${intent.period.label}의 KST 날짜 경계를 적용했습니다.` : '기간 제한 없이 최근성과 반복 신호를 함께 고려했습니다.' });
 
@@ -329,7 +383,7 @@ export async function runUnconsciousQuery(message: string, visits: BrowserVisit[
   const highlightedVisitIds = evidenceVisits.map(({ visit }) => visit.id);
   trace.push({ agent: '지도 항해자', status: 'completed', summary: `관련 관심 축 ${highlightedCandidateIds.length}개와 근거 방문 ${highlightedVisitIds.length}개를 강조하도록 전달했습니다.` });
 
-  let answer = fallbackResponse(message, intent, evidenceVisits, verifiedRelationships, webSearch.sources, webSearch.answer);
+  let answer = fallbackResponse(message, intent, retrieved, verifiedRelationships, webSearch.sources, webSearch.answer, broaderRetrieved);
   try {
     const modelAnswer = await composeWithModel(message, intent, evidenceVisits, verifiedRelationships, webSearch.sources, webSearch.answer, webSearchEnabled);
     if (modelAnswer) answer = modelAnswer;

@@ -73,6 +73,39 @@ describe('runUnconsciousQuery', () => {
     expect(result.answer).not.toContain('단어 조각이 아니라');
     expect(result.trace.find((entry) => entry.agent === '질문 해석자')?.summary).toContain('반복 관심 탐색');
   });
+
+  it('does not match unrelated pages like checkouts or civil service pages having substring ai/api in tracking URLs', async () => {
+    const temuVisit = visit({
+      id: 'visit-temu',
+      title: '결제 (9)',
+      domain: 'temu.com',
+      url: 'https://www.temu.com/bgt_order_checkout.html?_x_ns_irclickid=xSvxaHWnJxyZUhHTKiVmBUVmUkr2i1yzjXLrTs0&address_snapshot_sn=CgI2WRIIdHIyallDaVIaIFaQnX%2F69ZJtNe1loGYiGba6rheGWcpqkbNSWGSHmpilMAI%3D&create_order_sign=1f2fd4520495f4eca43a8f0556b6a6d0',
+      normalizedUrl: 'https://temu.com/bgt_order_checkout.html',
+    });
+    const bundangVisit = visit({
+      id: 'visit-bundang',
+      title: '정자동 행정복지센터 모바일',
+      domain: 'bundang-gu.go.kr',
+      url: 'https://bundang-gu.go.kr:10009/dong/default/mobile/main/index.asp',
+      normalizedUrl: 'https://bundang-gu.go.kr:10009/dong/default/mobile/main/index.asp',
+    });
+    const courseraVisit = visit({
+      id: 'visit-coursera-ai',
+      title: 'AI로 만들기: 피드백 보고서 | Coursera',
+      domain: 'coursera.org',
+      url: 'https://www.coursera.org/learn/google-ai-essentials',
+      normalizedUrl: 'https://coursera.org/learn/google-ai-essentials',
+    });
+
+    const result = await runUnconsciousQuery('내가 어제 본 것 중에 AI 콘텐츠 제작 관련된 게 뭐더라?', [temuVisit, bundangVisit, courseraVisit], [], false);
+
+    const matchedIds = result.matchedVisits.map((v) => v.id);
+    expect(matchedIds).not.toContain('visit-temu');
+    expect(matchedIds).not.toContain('visit-bundang');
+    expect(matchedIds).toContain('visit-coursera-ai');
+    expect(result.answer).not.toContain('temu.com');
+    expect(result.answer).not.toContain('bundang-gu.go.kr');
+  });
 });
 
 

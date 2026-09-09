@@ -7,7 +7,12 @@ const MAX_QUEUE_SIZE = 5_000;
 const INCREMENTAL_SYNC_OVERLAP_MS = 2 * 60 * 1_000;
 const DEFAULT_AUTO_SYNC_INTERVAL_MINUTES = 30;
 const AUTO_SYNC_INTERVAL_OPTIONS = [15, 30, 60, 180, 360];
-const DASHBOARD_MATCHES = ['https://amy-brain-map.vercel.app/*', 'http://localhost/*'];
+const DASHBOARD_MATCHES = [
+  'https://amy-brain-map.vercel.app/*',
+  'https://*.vercel.app/*',
+  'http://localhost/*',
+  'http://127.0.0.1/*',
+];
 
 const EMPTY_SETTINGS = {
   endpoint: '',
@@ -103,7 +108,12 @@ function apiUrl(endpoint, path) {
 function isSupportedDashboard(endpoint) {
   try {
     const url = new URL(endpoint);
-    return url.origin === 'https://amy-brain-map.vercel.app' || url.origin === 'http://localhost:3000';
+    return (
+      url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname === 'amy-brain-map.vercel.app' ||
+      url.hostname.endsWith('.vercel.app')
+    );
   } catch {
     return false;
   }
@@ -332,21 +342,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === 'auto-connect-and-initial-sync') {
-      const wasConfigured = configuredForSync(await getSettings());
       await connectFromDashboard(message.endpoint, message.connectCode);
-      sendResponse({ success: true, started: true });
-      const doFull = Boolean(message.forceFull) || !wasConfigured;
-      await (doFull ? syncInitialHistory(Number(message.days || 3650)) : syncHistorySinceLastSync());
+      const historyResult = await syncInitialHistory(Number(message.days || 3650));
+      const pendingResult = await syncPending();
+      const totalSynced = (historyResult.synced || 0) + (pendingResult.synced || 0);
+      const totalQueued = historyResult.queuedFromHistory || totalSynced;
+      sendResponse({
+        success: true,
+        queuedFromHistory: totalQueued,
+        synced: totalSynced,
+        incremental: false,
+      });
       return;
     }
     if (message.type === 'initial-sync') {
-      sendResponse({ success: true, started: true });
-      await syncInitialHistory(Number(message.days || 3650));
+      const historyResult = await syncInitialHistory(Number(message.days || 3650));
+      const pendingResult = await syncPending();
+      const totalSynced = (historyResult.synced || 0) + (pendingResult.synced || 0);
+      const totalQueued = historyResult.queuedFromHistory || totalSynced;
+      sendResponse({
+        success: true,
+        queuedFromHistory: totalQueued,
+        synced: totalSynced,
+        incremental: false,
+      });
       return;
     }
     if (message.type === 'sync-history-since-last-sync') {
-      sendResponse({ success: true, started: true });
-      await syncHistorySinceLastSync();
+      const res = await syncHistorySinceLastSync();
+      sendResponse({ success: true, ...res });
       return;
     }
     if (message.type === 'sync-now') {

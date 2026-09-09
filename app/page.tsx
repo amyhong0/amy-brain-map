@@ -350,12 +350,13 @@ export default function Home() {
       if (!analysisResponse.ok) throw new Error(analysisData.error || '동기화된 흔적을 분석하지 못했습니다.');
       await loadData();
       if (analysisData.candidates?.[0]) setSelectedCandidate(analysisData.candidates[0]);
-      const total = Number(result.queuedFromHistory || 0);
+      const visitsRes = await fetch('/api/unconscious/visits?limit=1', { cache: 'no-store' }).catch(() => null);
+      const visitsData = visitsRes ? await visitsRes.json().catch(() => ({})) : {};
+      const actualStoredTotal = Number(visitsData?.total ?? 0);
+      const total = Math.max(Number(result.queuedFromHistory || 0), Number(result.synced || 0), actualStoredTotal);
       if (total > 0) setHistorySyncProgress(100);
       setHistorySyncMessage(total > 0
-        ? (result.incremental
-          ? `${total.toLocaleString('ko-KR')}개의 최근 Chrome 기록을 확인해 지도에 반영했습니다.`
-          : `${total.toLocaleString('ko-KR')}개의 Chrome 기록을 읽어 지도에 반영했습니다.`)
+        ? `${total.toLocaleString('ko-KR')}개의 Chrome 기록을 읽어 지도에 반영했습니다.`
         : '새로 가져올 Chrome 기록이 없습니다. 확장 프로그램은 이후 방문을 자동으로 동기화합니다.');
     } catch (syncError) {
       setError(visitorFacingError(syncError, 'Chrome 기록을 가져오지 못했습니다.'));

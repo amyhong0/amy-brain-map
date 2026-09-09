@@ -14,5 +14,17 @@
     "default_title": "Amy Brain Map 동기화",
     "default_popup": "src/popup.html"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://amy-brain-map.vercel.app/*",
+        "https://*.vercel.app/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["src/dashboard-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "options_page": "src/options.html"
 }

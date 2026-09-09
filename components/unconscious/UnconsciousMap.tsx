@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CircleDot, Minus, Network, Plus, RotateCcw, Settings2, Trash2, X } from 'lucide-react';
 import { DiscoveryCandidate } from './types';
 
@@ -55,17 +55,12 @@ interface MapPoint {
   y: number;
 }
 
-interface ClusterColor {
-  stroke: string;
-  glow: string;
-}
-
 interface TopicCluster {
   id: string;
   rootId: string;
   rootLabel: string;
   memberIds: Set<string>;
-  color: ClusterColor;
+  color: { fill: string; stroke: string; soft: string };
 }
 
 interface ClusterMindMapLayout {
@@ -74,26 +69,19 @@ interface ClusterMindMapLayout {
   clusters: TopicCluster[];
 }
 
-const CLUSTER_PALETTE: ClusterColor[] = [
-  { stroke: '#38bdf8', glow: '#0ea5e9' },
-  { stroke: '#a78bfa', glow: '#8b5cf6' },
-  { stroke: '#fbbf24', glow: '#f59e0b' },
-  { stroke: '#fb7185', glow: '#f43f5e' },
-  { stroke: '#34d399', glow: '#10b981' },
-  { stroke: '#fb923c', glow: '#f97316' },
-  { stroke: '#67e8f9', glow: '#22d3ee' },
-  { stroke: '#d8b4fe', glow: '#c084fc' },
-  { stroke: '#a3e635', glow: '#84cc16' },
-  { stroke: '#f9a8d4', glow: '#f472b6' },
-  { stroke: '#fde68a', glow: '#fbbf24' },
-  { stroke: '#86efac', glow: '#4ade80' },
+const CLUSTER_PALETTE = [
+  { fill: 'rgba(96, 165, 250, 0.22)', stroke: '#60a5fa', soft: 'rgba(96, 165, 250, 0.12)' },
+  { fill: 'rgba(52, 211, 153, 0.22)', stroke: '#34d399', soft: 'rgba(52, 211, 153, 0.12)' },
+  { fill: 'rgba(251, 191, 36, 0.22)', stroke: '#fbbf24', soft: 'rgba(251, 191, 36, 0.12)' },
+  { fill: 'rgba(244, 114, 182, 0.22)', stroke: '#f472b6', soft: 'rgba(244, 114, 182, 0.12)' },
+  { fill: 'rgba(167, 139, 250, 0.22)', stroke: '#a78bfa', soft: 'rgba(167, 139, 250, 0.12)' },
+  { fill: 'rgba(45, 212, 191, 0.22)', stroke: '#2dd4bf', soft: 'rgba(45, 212, 191, 0.12)' },
+  { fill: 'rgba(251, 146, 60, 0.22)', stroke: '#fb923c', soft: 'rgba(251, 146, 60, 0.12)' },
+  { fill: 'rgba(129, 140, 248, 0.22)', stroke: '#818cf8', soft: 'rgba(129, 140, 248, 0.12)' },
 ];
 
-function colorForCluster(index: number): ClusterColor {
-  const existing = CLUSTER_PALETTE[index];
-  if (existing) return existing;
-  const hue = Math.round((index * 137.508) % 360);
-  return { stroke: `hsl(${hue} 82% 70%)`, glow: `hsl(${hue} 78% 55%)` };
+function colorForCluster(index: number) {
+  return CLUSTER_PALETTE[index % CLUSTER_PALETTE.length];
 }
 
 const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = {
@@ -103,9 +91,10 @@ const STATUS_STYLE: Record<CandidateStatus, { label: string; color: string }> = 
   rejected: { label: '제외됨', color: '#65718a' },
 };
 
-function nodeRadius(node: MapNode, degree = 0) {
-  const connectionBoost = Math.min(10, degree * 1.7);
-  return Math.min(40, 14 + node.count * 2.2 + node.confidence * 8 + connectionBoost);
+function nodeRadius(node: MapNode, degree = 0, totalNodeCount = 24) {
+  const densityScale = Math.max(0.42, Math.min(1.0, Math.sqrt(24 / Math.max(24, totalNodeCount))));
+  const connectionBoost = Math.min(8, degree * 1.4);
+  return Math.min(36, (12 + node.count * 1.8 + node.confidence * 6 + connectionBoost) * densityScale);
 }
 
 function nodeImportance(node: MapNode, degree: number) {
@@ -124,7 +113,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const remaining = new Set(nodes.map((node) => node.id));
   const clusters: TopicCluster[] = [];
-  const maxMembersPerCluster = nodes.length > 12 ? 5 : 6;
+  const maxMembersPerCluster = nodes.length > 40 ? 8 : nodes.length > 18 ? 6 : 5;
   while (remaining.size > 0) {
     const seed = [...remaining]
       .map((id) => nodesById.get(id)!)
@@ -159,12 +148,13 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
   const fixedRootIds = new Set<string>();
   const clusterCenterById = new Map<string, MapPoint>();
   const clusterRadiusById = new Map<string, number>();
+  const densityScale = Math.max(0.45, Math.min(1.0, Math.sqrt(24 / Math.max(24, nodes.length))));
   const clusterGeometry = clusters.map((cluster) => {
     const rootNode = nodesById.get(cluster.rootId)!;
     const weight = Math.max(1, cluster.memberIds.size);
     const radius = weight === 1
-      ? nodeRadius(rootNode, degrees.get(rootNode.id) || 0) + 14
-      : Math.max(94, Math.min(112, 56 + Math.sqrt(weight) * 23));
+      ? nodeRadius(rootNode, degrees.get(rootNode.id) || 0, nodes.length) + 12
+      : Math.max(46, Math.min(112, (48 + Math.sqrt(weight) * 20) * densityScale));
     return { cluster, radius };
   });
   const clusterIndexByNodeId = new Map<string, number>();
@@ -287,12 +277,12 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const startAngle = current.angle - childSpan * (children.length - 1) / 2;
       children.forEach(([childId], index) => {
         const childAngle = externalDirectionForNode(childId, clusterIndex) ?? (startAngle + childSpan * index);
-        const distance = current.depth === 0 ? Math.min(106, Math.max(76, desiredRadius * 0.76)) : Math.min(76, Math.max(52, desiredRadius * 0.54));
+        const distance = current.depth === 0 ? Math.min(106 * densityScale, Math.max(46, desiredRadius * 0.74)) : Math.min(76 * densityScale, Math.max(34, desiredRadius * 0.52));
         const rawPoint = { x: currentPoint.x + Math.cos(childAngle) * distance, y: currentPoint.y + Math.sin(childAngle) * distance };
         const dx = rawPoint.x - clusterCenter.x;
         const dy = rawPoint.y - clusterCenter.y;
         const localDistance = Math.hypot(dx, dy);
-        const localLimit = Math.max(20, desiredRadius - nodeRadius(nodesById.get(childId)!, degrees.get(childId) || 0) - 6 + bridgeAllowanceForNode(childId));
+        const localLimit = Math.max(14, desiredRadius - nodeRadius(nodesById.get(childId)!, degrees.get(childId) || 0, nodes.length) - 5 + bridgeAllowanceForNode(childId));
         const point = localDistance > localLimit ? { x: clusterCenter.x + dx * localLimit / localDistance, y: clusterCenter.y + dy * localLimit / localDistance } : rawPoint;
         positions.set(childId, point);
         placed.add(childId);
@@ -315,7 +305,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const dy = target.y - source.y;
       const distance = Math.hypot(dx, dy);
       if (distance < 0.1) continue;
-      const desiredDistance = nodeRadius(nodes[sourceIndex], degrees.get(nodes[sourceIndex].id) || 0) + nodeRadius(nodes[targetIndex], degrees.get(nodes[targetIndex].id) || 0) + 28;
+      const desiredDistance = nodeRadius(nodes[sourceIndex], degrees.get(nodes[sourceIndex].id) || 0, nodes.length) + nodeRadius(nodes[targetIndex], degrees.get(nodes[targetIndex].id) || 0, nodes.length) + Math.max(12, 24 * densityScale);
       if (distance <= desiredDistance) continue;
       const pull = Math.min(3.5, (distance - desiredDistance) * (0.012 + edge.score * 0.014));
       const angle = Math.atan2(dy, dx);
@@ -334,7 +324,7 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
         const dx = right.x - left.x;
         const dy = right.y - left.y;
         const distance = Math.hypot(dx, dy);
-        const requiredDistance = nodeRadius(leftNode, degrees.get(leftNode.id) || 0) + nodeRadius(rightNode, degrees.get(rightNode.id) || 0) + 20;
+        const requiredDistance = nodeRadius(leftNode, degrees.get(leftNode.id) || 0, nodes.length) + nodeRadius(rightNode, degrees.get(rightNode.id) || 0, nodes.length) + Math.max(10, 18 * densityScale);
         if (distance >= requiredDistance) continue;
         const angle = distance > 0.01 ? Math.atan2(dy, dx) : (leftIndex + 1) * 1.618;
         const push = Math.min(12, (requiredDistance - distance) / 2 + 0.6);
@@ -353,9 +343,9 @@ function resolveClusterMindMapLayout(nodes: MapNode[], edges: MapEdge[], degrees
       const dx = points[index].x - clusterCenter.x;
       const dy = points[index].y - clusterCenter.y;
       const distance = Math.hypot(dx, dy);
-      const localLimit = Math.max(18, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0) - 6 + bridgeAllowanceForNode(node.id));
+      const localLimit = Math.max(14, clusterRadius - nodeRadius(node, degrees.get(node.id) || 0, nodes.length) - 5 + bridgeAllowanceForNode(node.id));
       if (distance > localLimit && distance > 0) Object.assign(points[index], { x: clusterCenter.x + dx * localLimit / distance, y: clusterCenter.y + dy * localLimit / distance });
-      const padding = nodeRadius(node, degrees.get(node.id) || 0) + 12;
+      const padding = nodeRadius(node, degrees.get(node.id) || 0, nodes.length) + 8;
       points[index].x = Math.max(padding, Math.min(width - padding, points[index].x));
       points[index].y = Math.max(padding, Math.min(height - padding, points[index].y));
     }
@@ -463,8 +453,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
         if (leftHighlighted && !rightHighlighted) return -1;
         if (!leftHighlighted && rightHighlighted) return 1;
         return right.confidence - left.confidence || right.count - left.count || left.label.localeCompare(right.label, 'ko-KR');
-      })
-      .slice(0, 36);
+      });
     const nodeIds = new Set(graphNodes.map((node) => node.id));
     const edgesByPair = new Map<string, MapEdge>();
 
@@ -501,7 +490,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
       }
     }
 
-    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score).slice(0, 36) };
+    return { nodes: graphNodes, edges: [...edgesByPair.values()].sort((left, right) => right.score - left.score) };
   }, [candidates, view, highlighted, evidenceRelatedNodeIds]);
 
   const width = 980;
@@ -532,6 +521,48 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const visibleNodes = showIsolated ? nodes : nodes.filter((node) => (degrees.get(node.id) || 0) > 0);
   const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
   const visibleEdges = edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
+
+  const previousHighlightKeyRef = useRef<string>('');
+
+  useEffect(() => {
+    const currentHighlightKey = `${[...highlighted].sort().join(',')}:${[...evidenceRelatedNodeIds].sort().join(',')}`;
+    if (currentHighlightKey === previousHighlightKeyRef.current) return;
+    previousHighlightKeyRef.current = currentHighlightKey;
+
+    if (highlighted.size === 0 && evidenceRelatedNodeIds.size === 0) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const activeNodes = nodes.filter(
+      (node) => evidenceRelatedNodeIds.has(node.id) || node.candidates.some((item) => highlighted.has(item.id))
+    );
+    const activePoints = activeNodes.map((n) => positions.get(n.id)).filter((p): p is MapPoint => Boolean(p));
+
+    if (activePoints.length === 0) return;
+
+    const minX = Math.min(...activePoints.map((p) => p.x));
+    const maxX = Math.max(...activePoints.map((p) => p.x));
+    const minY = Math.min(...activePoints.map((p) => p.y));
+    const maxY = Math.max(...activePoints.map((p) => p.y));
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const spanX = Math.max(60, maxX - minX);
+    const spanY = Math.max(60, maxY - minY);
+
+    const targetZoom = Math.min(1.45, Math.max(1.2, Math.min((width * 0.52) / spanX, (height * 0.52) / spanY)));
+    const targetPanX = targetZoom * (width / 2 - centerX);
+    const targetPanY = targetZoom * (height / 2 - centerY);
+
+    setZoom(Number(targetZoom.toFixed(2)));
+    setPan({
+      x: Math.max(-width * 0.65, Math.min(width * 0.65, Number(targetPanX.toFixed(1)))),
+      y: Math.max(-height * 0.65, Math.min(height * 0.65, Number(targetPanY.toFixed(1)))),
+    });
+  }, [nodes, positions, highlighted, evidenceRelatedNodeIds, width, height]);
+
   const detailForNode = (node: MapNode): MapNodeDetail => ({
     id: node.id,
     label: node.label,
@@ -661,7 +692,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
               </defs>
               <rect x="0" y="0" width={width} height={height} rx="26" fill="#070c14" />
               <rect x="0" y="0" width={width} height={height} rx="26" fill="url(#dotGrid)" opacity=".18" pointerEvents="none" />
-              <g transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
+              <g transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`} style={{ transition: dragStart ? 'none' : 'transform 480ms cubic-bezier(0.16, 1, 0.3, 1)' }}>
                 {pointer && !dragStart && <circle cx={pointer.x} cy={pointer.y} r="30" fill="none" stroke="#cbd5e1" strokeOpacity=".14" strokeWidth="1" pointerEvents="none" />}
                 {visibleEdges.map((edge) => {
                   const source = positions.get(edge.source);
@@ -687,18 +718,53 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                   const isDimmed = (hasHighlightedNodes && !isHighlighted && !isSelected) || (connectionFocusId !== null && !isConnectionFocused);
                   const degree = degrees.get(node.id) || 0;
                   const cluster = clusterByNode.get(node.id);
-                  const radius = Math.max(4.5, Math.min(13, nodeRadius(node, degree) * .32)) + (isHighlighted ? 1.7 : 0);
-                  const color = isHighlighted ? '#6ee7ff' : cluster?.color.stroke || STATUS_STYLE[statusFor(node)].color;
-                  const labelLimit = 18;
+                  const densityScale = Math.max(0.42, Math.min(1.0, Math.sqrt(24 / Math.max(24, nodes.length))));
+                  const baseRadius = Math.max(3.5, Math.min(12.5, nodeRadius(node, degree, nodes.length) * 0.32));
+                  const radius = isHighlighted ? Math.max(baseRadius * 1.85, 13) : baseRadius;
+                  const color = isHighlighted ? '#38bdf8' : cluster?.color.stroke || STATUS_STYLE[statusFor(node)].color;
+                  const labelLimit = isHighlighted ? 30 : 18;
                   const label = node.label.length > labelLimit ? `${node.label.slice(0, labelLimit)}…` : node.label;
                   const sway = reedSway(point, pointer);
                   const detail = detailForNode(node);
                   return (
                     <g key={node.id} data-graph-node="true" role="button" tabIndex={0} aria-label={`${node.label}, ${isHighlighted ? '현재 질문 관련 항목, ' : ''}${STATUS_STYLE[statusFor(node)].label}, 연결 ${degree}개. 상세 정보 열기`} onPointerEnter={() => { hoveredNodeRef.current = node.id; setPointer(null); setHoveredNodeId(node.id); }} onPointerLeave={() => { if (hoveredNodeRef.current === node.id) hoveredNodeRef.current = null; setPointer(null); setHoveredNodeId((current) => current === node.id ? null : current); }} onClick={(event) => { event.stopPropagation(); if (candidate) onSelect(candidate, detail); }} onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); if (candidate) onSelect(candidate, detail); }} className="map-node-reed cursor-pointer outline-none" style={{ opacity: isDimmed ? 0.16 : 1, transformBox: 'fill-box', transformOrigin: 'center', transform: `translate(${sway.x}px, ${sway.y}px) scale(${sway.scale * (hoveredNodeId === node.id ? 1.08 : 1)})`, transition: 'transform 130ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease' }}>
                       <circle cx={point.x} cy={point.y} r={Math.max(radius + 7, 15)} fill="transparent" pointerEvents="all" />
-                      {(isFocused || isHighlighted) && <circle cx={point.x} cy={point.y} r={radius + 4.5} fill="none" stroke={isHighlighted ? '#6ee7ff' : '#e5edff'} strokeOpacity={isHighlighted ? .9 : .65} strokeWidth="1.15" />}
-                      <circle cx={point.x} cy={point.y} r={radius} fill={color} fillOpacity={isHighlighted ? 1 : .88} stroke={isSelected ? '#ffffff' : color} strokeOpacity={isSelected ? .95 : .45} strokeWidth={isSelected ? 1.5 : .7} />
-                      {showLabels && <text x={point.x + radius + 6} y={point.y + 3.5} textAnchor="start" fill={isHighlighted ? '#bdf8ff' : isFocused ? '#f8fafc' : '#cbd5e1'} fillOpacity={isDimmed ? .22 : isFocused ? 1 : .76} fontSize="10" fontWeight={isFocused ? "650" : "500"} pointerEvents="none">{label}</text>}
+                      {isHighlighted && (
+                        <>
+                          <circle cx={point.x} cy={point.y} r={radius + 8} fill="#38bdf8" fillOpacity={0.16} />
+                          <circle cx={point.x} cy={point.y} r={radius + 5} fill="none" stroke="#6ee7ff" strokeOpacity={0.9} strokeWidth={1.75} strokeDasharray="3 3" />
+                        </>
+                      )}
+                      {(isFocused && !isHighlighted) && <circle cx={point.x} cy={point.y} r={radius + 4.5} fill="none" stroke="#e5edff" strokeOpacity={0.65} strokeWidth={1.15} />}
+                      <circle cx={point.x} cy={point.y} r={radius} fill={color} fillOpacity={isHighlighted ? 1 : 0.88} stroke={isSelected || isHighlighted ? '#ffffff' : color} strokeOpacity={isSelected || isHighlighted ? 0.95 : 0.45} strokeWidth={isSelected || isHighlighted ? 1.75 : 0.7} />
+                      {showLabels && (
+                        <g pointerEvents="none">
+                          {isHighlighted && (
+                            <rect
+                              x={point.x + radius + 4}
+                              y={point.y - 8.5}
+                              width={Math.min(node.label.length * 10 + 16, 200)}
+                              height={18}
+                              rx="5"
+                              fill="#020617"
+                              fillOpacity="0.94"
+                              stroke="#38bdf8"
+                              strokeWidth="1"
+                            />
+                          )}
+                          <text
+                            x={point.x + radius + (isHighlighted ? 10 : 6)}
+                            y={point.y + (isHighlighted ? 4.5 : 3.5)}
+                            textAnchor="start"
+                            fill={isHighlighted ? '#7dd3fc' : isFocused ? '#f8fafc' : '#cbd5e1'}
+                            fillOpacity={isDimmed ? 0.16 : isFocused ? 1 : 0.76}
+                            fontSize={isHighlighted ? '12' : nodes.length > 40 ? '9' : '10'}
+                            fontWeight={isHighlighted ? '750' : isFocused ? '650' : '500'}
+                          >
+                            {label}
+                          </text>
+                        </g>
+                      )}
                     </g>
                   );
                 })}

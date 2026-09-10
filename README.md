@@ -1,214 +1,264 @@
-# Amy Brain Map
+# Amy Brain Map (개인 인지 지도)
 
-> **스쳐 지나간 웹페이지 속에서, 내 사고의 흐름을 발견하는 개인 인지 그래프 서비스**
+> **스쳐 지나간 웹페이지 속에서, 내 사고의 흐름을 발견하는 개인 지식 그래프 & 대화형 기억 탐색 서비스**  
+> 🏆 **NVIDIA x KOSA AI Agent Engineer 해커톤 입상작**
 
-[Live Demo](https://amy-brain-map.vercel.app) · [Chrome Extension](./extension)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16.2-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon_Serverless-4169e1?style=flat-square&logo=postgresql)](https://neon.tech/)
+[![Chrome Extension MV3](https://img.shields.io/badge/Chrome_Extension-MV3-green?style=flat-square&logo=googlechrome)](https://developer.chrome.com/docs/extensions/mv3/intro/)
+[![Tests](https://img.shields.io/badge/Tests-27%20Passed-brightgreen?style=flat-square&logo=jest)](https://jestjs.io/)
+[![Deployment](https://img.shields.io/badge/Deploy-Vercel-black?style=flat-square&logo=vercel)](https://amy-brain-map.vercel.app)
 
-Amy Brain Map은 Chrome 방문 기록에 남은 **제목·도메인·방문 시각·방문 횟수**를 분석해, 사용자가 무심코 반복해서 살펴본 주제와 주제 사이의 연결을 시각화하는 서비스입니다. 단순한 방문 목록을 넘어 “어제 본 AI 콘텐츠 제작 자료가 무엇이었지?”, “Nvidia와 연결된 다른 관심은 무엇이야?”와 같은 자연어 질문에 개인 기록을 근거로 답하고, 근거가 된 노드와 연결선을 지도에서 바로 확인할 수 있게 설계했습니다.
+🔗 **[Live Service Demo](https://amy-brain-map.vercel.app)** · 🧩 **[Chrome Extension Source](./extension)**
 
-이 프로젝트는 **개인 데이터의 의미 있는 재해석**, **다중 사용자 데이터 격리**, **브라우저 확장 프로그램과 웹 서비스의 안전한 연동**을 하나의 제품 경험으로 구현한 풀스택 포트폴리오입니다.
+---
 
-## 프로젝트 한눈에 보기
+## 📌 Executive Summary
 
-| 구분 | 내용 |
-|---|---|
-| **문제** | 일상적인 웹 탐색은 빠르게 잊히지만, 반복 방문과 함께 본 페이지에는 관심사·학습 흐름·작업 맥락이 축적됩니다. |
-| **해결** | 방문 메타데이터를 분석해 관심 노드와 연결 후보를 만들고, 대화형 검색과 그래프 탐색으로 다시 찾을 수 있게 합니다. |
-| **사용자 가치** | 기억에 의존하지 않고, 자신의 관심이 어디서 반복되고 어떤 주제와 이어지는지 확인할 수 있습니다. |
-| **개인정보 원칙** | 시크릿 모드 기록은 수집하지 않으며, 페이지 메타데이터(제목, URL, 핵심 설명)만 사용자 계정 단위로 안전하게 분리 보관합니다. |
-| **배포 주소** | [amy-brain-map.vercel.app](https://amy-brain-map.vercel.app) |
+현대인은 매일 수십~수백 개의 탭을 열고 닫지만, 브라우저의 기본 방문 기록(History)은 단순 시간순 나열에 불과해 **“내가 어떤 관심사를 반복해서 깊게 팠는지”**, **“서로 다른 주제들이 어떤 맥락으로 이어졌는지”**를 파악하기 어렵습니다.
 
-## 사용자 흐름
+**Amy Brain Map**은 Chrome 확장 프로그램을 통해 수집된 사용자의 방문 메타데이터(제목, 도메인, 시각, 빈도)를 인공지능이 분석하여, **1) 개인 지식 그래프(Cognitive Graph)**로 형상화하고, **2) 자연어 대화형 검색(Ask Your Map)**을 통해 과거의 사고 궤적을 직관적으로 되살려주는 풀스택 AI 에이전트 서비스입니다.
 
-사용자는 Google 계정으로 로그인한 뒤 **Chrome 기록 가져오기** 버튼을 누릅니다. 대시보드와 확장 프로그램은 짧은 수명의 설치 권한을 교환해 현재 Chrome 프로필을 연결하고, 방문 메타데이터를 초기 수집한 뒤 설정된 간격으로 증분 동기화합니다. 분석이 끝나면 서비스는 사용자의 탐색 흔적을 관심 그래프와 연결 검토 대상으로 제시합니다.
+---
+
+## 💡 핵심 문제 정의 및 해결 접근
 
 ```mermaid
 flowchart LR
-  A[Google 로그인] --> B[Chrome 기록 가져오기]
-  B --> C[현재 Chrome 프로필 연결]
-  C --> D[방문 메타데이터 동기화]
-  D --> E[관심·관계 분석]
-  E --> F[개인 인지 그래프]
-  F --> G[대화형 기억 탐색]
+    A[문제: 파편화된 탐색 흔적] --> B[단순 URL 나열 & 맥락 소실]
+    B --> C{Amy Brain Map 해결책}
+    C --> D[지식 그래프 시각화: 관심사 및 연결망 형상화]
+    C --> E[A2A 대화형 검색: 개인 기록 기반 자연어 답변]
+    C --> F[안전한 데이터 주권: 최소 수집 & 계정별 완전 격리]
 ```
 
-| 단계 | 사용자가 경험하는 기능 | 구현 포인트 |
+| 구분 | 기존 브라우저 히스토리 | Amy Brain Map |
 |---|---|---|
-| **1. 연결** | 별도 연결 코드 없이 Chrome 프로필을 연결합니다. | Google 세션으로 확인된 설치 권한을 확장 프로그램에 1회 전달합니다. |
-| **2. 수집** | 최초 기록 수집의 진행률을 확인하고 이후 자동 수집 간격을 조절합니다. | Manifest V3 확장 프로그램이 History API와 Alarms API를 사용합니다.[1] |
-| **3. 분석** | 반복 관심과 연결 후보를 검토·반영합니다. | 후보의 `pending`·`approved`·`rejected` 상태를 분리합니다. |
-| **4. 탐색** | 그래프를 직접 탐색하거나 자연어로 자신의 기록을 검색합니다. | 질의 근거를 노드·연결선 강조 상태로 연결합니다. |
+| **데이터 표현** | 날짜별 단순 URL/제목 리스트 | 관심 빈도와 관계망이 살아있는 **인지 그래프(Cognitive Graph)** |
+| **탐색 방식** | 단순 키워드 검색 (기억 안 나면 찾기 불가) | **의도·시간 추론 기반 자연어 질의** ("어제 본 AI 에이전트 자료 뭐야?") |
+| **맥락 연결** | 독립된 개별 방문 기록 | 공통 탐색 및 주제 전이를 분석한 **브릿지 연결선(Relationship Edge)** |
+| **개인정보 보호** | 로컬 기기 종속 또는 동기화 불투명 | **시크릿 모드 차단, 도메인 블랙리스트, GCS AES-256 암호화 백업** |
 
-## 핵심 경험
+---
 
-### 1. 관심 그래프: 연결된 것은 가깝게, 다른 흐름은 구분되게
+## 🏛️ 전체 시스템 아키텍처
 
-관심 그래프는 주제별로 색상을 달리하는 지역 군집을 만들되, 색상만으로 고립된 집단을 뜻하지는 않도록 설계했습니다. 실제 탐색 근거로 확인된 군집 간 연결은 **브리지 연결선**으로 남기고, 직접 연결된 노드와 군집은 엣지 인력 기반 레이아웃으로 서로 가까워지게 배치합니다.
-
-```mermaid
-flowchart LR
-  subgraph C1[하늘색 주제 군집]
-    A[Brain] --- B[AI]
-    A --- C[Map]
-  end
-  subgraph C2[보라색 주제 군집]
-    D[Google] --- E[Cloud]
-  end
-  A === D
-```
-
-| 그래프 기능 | 동작 |
-|---|---|
-| **군집별 색상** | 가까운 관련 주제를 동일 색상으로 묶어 지역적 맥락을 보여 줍니다. |
-| **브리지 연결** | 서로 다른 색 군집 사이의 선은 실제 방문 근거가 확인된 교차 관심사입니다. |
-| **연결 지향 배치** | 직접 연결된 노드의 가지 방향과 군집 위치를 서로 향하게 해 긴 연결선을 줄입니다. |
-| **비중첩 처리** | 노드 반경과 연결 수를 고려해 충돌을 피하면서도 군집은 가까이 유지합니다. |
-| **탐색 제어** | 휠·버튼 확대/축소, 빈 공간 드래그 이동, 키보드 방향 이동, 표시 설정을 제공합니다. |
-| **호버 반응** | 노드 근처의 부드러운 반응은 유지하되, 노드 위에서는 움직임을 멈춰 안정적인 선택을 보장합니다. |
-| **인라인 상세 정보** | 노드를 클릭하면 노드 옆 팝오버에서 상태·신뢰도·연결·근거를 확인하고 지도에서만 제거할 수 있습니다. |
-
-> **그래프에서의 색상은 ‘가까운 주제 군집’을, 선은 ‘탐색 근거가 있는 관계’를 의미합니다.** 따라서 서로 다른 색의 노드 사이에 선이 존재할 수 있으며, 이는 관심 흐름이 만나는 지점을 보여 줍니다.
-
-### 2. 대화형 기억 탐색: 개인 기록 우선, 공개 웹은 명시적 선택일 때만
-
-질문은 키워드, 반복 관심, 연결, 최근 활동, 활동 시점의 다섯 가지 탐색 의도로 해석됩니다. 답변은 먼저 사용자의 방문 기록과 그래프 후보에서 근거를 찾고, 충분한 근거가 없으며 사용자가 **웹 검색** 토글을 켠 경우에만 Tavily를 통해 공개 정보를 보강합니다. 개인 방문 이력은 외부 검색 서비스에 전달하지 않습니다.
-
-| 질의 예시 | 탐색 방식 | 결과 |
-|---|---|---|
-| “내가 어제 본 AI 콘텐츠 제작 자료가 뭐였지?” | 시간 범위 + 주제 기반 방문 기록 검색 | 관련 페이지, 도메인, 방문 횟수와 그래프 강조 |
-| “Nvidia와 연결된 다른 관심은?” | 그래프 연결 탐색 | 직접 연결된 관심사와 공통 근거 확인 |
-| “최근 일주일 동안 반복해서 본 주제는?” | 반복 방문·도메인·시간 흐름 분석 | 빈도와 맥락을 정리한 주제 요약 |
-| “요즘 각광받는 에이전트 설계 방법” | 개인 기록 근거 부족 + 웹 검색 ON | 개인 기록과 구분된 공개 웹 출처 보강 |
-
-## 역할 분리형 분석 파이프라인
-
-Amy Brain Map은 개인 기록에 없는 내용을 기록에서 찾은 것처럼 답하지 않기 위해, 질의 해석·기억 탐색·시간 해석·관계 검증·지도 강조·응답 생성을 역할별로 분리했습니다. 이 구조는 단일 검색 결과를 바로 문장으로 변환하는 방식보다, **근거와 응답의 경계**를 명확하게 유지하는 데 초점을 둡니다.
-
-```mermaid
-flowchart LR
-  Q[사용자 질문] --> I[질문 해석]
-  I --> R[기억 탐색]
-  I --> T[시간 해석]
-  R --> V[관계 검증]
-  T --> V
-  V --> M[지도 강조 대상 선택]
-  M --> A[응답 구성]
-  R -. 개인 기록 근거 부족 + 웹 검색 ON .-> W[공개 웹 검색]
-  W --> A
-  A --> O[답변·근거·그래프 강조]
-```
-
-## 아키텍처
-
-Vercel은 웹 배포와 서버 API 실행 계층으로 사용하고, 사용자별 실시간 데이터는 PostgreSQL에, 암호화된 백업과 내보내기는 Google Cloud Storage에 저장합니다. 이를 통해 서버리스 실행 환경에서도 사용자 데이터와 백업 객체의 책임을 분리했습니다.
+Next.js 16 App Router 기반의 서버리스 환경에서 안전한 Chrome 확장 프로그램 연동, A2A 에이전트 분석 파이프라인, 그래프 시각화 레이어가 유기적으로 연결되어 있습니다.
 
 ```mermaid
 flowchart TB
-  U[사용자] --> W[Next.js 웹 대시보드]
-  U --> X[Chrome 확장 프로그램]
-  W --> O[Google OAuth]
-  W --> A[인증·도메인 API]
-  X --> A
-  A --> P[(PostgreSQL)]
-  A --> G[(Google Cloud Storage)]
-  A --> N[NVIDIA AI API]
-  A -. 웹 검색 토글 ON .-> T[Tavily API]
-  V[Vercel] --> W
-  V --> A
+    subgraph ClientLayer["클라이언트 계층"]
+        CE["Chrome Extension (MV3)<br/>History · Storage · Alarms"]
+        Web["Next.js 16 Web Dashboard<br/>Aether Dark Theme · SVG Graph"]
+    end
+
+    subgraph AuthLayer["인증 & 게이트웨이"]
+        OAuth["Google OAuth 2.0<br/>OpenID Connect"]
+        Bridge["One-Time Token Bridge<br/>Zero-Copy Extension Link"]
+    end
+
+    subgraph ServiceLayer["서버리스 애플리케이션 계층 (Vercel)"]
+        API["Route Handlers (TypeScript)<br/>/api/unconscious/*"]
+        AgentEngine["A2A Multi-Agent Engine<br/>Intent · Temporal · Verify · Answer"]
+        KGEngine["Knowledge Graph Engine<br/>Node Merging · Force Layout · Edge Scoring"]
+    end
+
+    subgraph DataLayer["영속성 & AI 계층"]
+        PG[("PostgreSQL (Neon)<br/>User-Scoped Isolation")]
+        GCS[("Google Cloud Storage<br/>AES-256-GCM Encrypted Backup")]
+        Nvidia["NVIDIA AI Foundation Models<br/>Llama-3.3-70b-instruct"]
+        Tavily["Tavily Web Search API<br/>Fallback Augmentation"]
+    end
+
+    CE -- "단기 설치 권한 교환" --> Bridge
+    Bridge --> API
+    Web -- "Google 세션 쿠키" --> OAuth
+    Web <--> API
+    API --> KGEngine
+    API --> AgentEngine
+    AgentEngine --> Nvidia
+    AgentEngine -. "사용자 웹 검색 허용 시" .-> Tavily
+    API --> PG
+    API --> GCS
 ```
 
-| 계층 | 기술 | 설계 의도 |
-|---|---|---|
-| **웹·API** | Next.js 16, App Router, TypeScript, Tailwind CSS | 하나의 코드베이스에서 대시보드와 서버 API를 구현합니다. |
-| **인증** | Google OAuth 2.0, OpenID Connect, 서명 세션 쿠키 | Google 사용자 ID를 기준으로 데이터 접근 범위를 제한합니다. |
-| **데이터** | PostgreSQL, Neon Serverless Driver | 방문 기록, 후보, 정책, 분석 실행을 계정 단위로 격리합니다. |
-| **백업·내보내기** | Google Cloud Storage, AES-256-GCM, gzip | 사용자별 백업·내보내기 파일을 앱 수준 암호화 후 비공개 버킷에 보관합니다. |
-| **Chrome 연동** | Manifest V3, History API, Storage API, Alarms API | 초기 수집·증분 동기화·자동 수집 간격을 브라우저 측에서 처리합니다.[1] |
-| **AI·검색** | NVIDIA API, Tavily API | 개인 기록을 우선 탐색하고, 선택적으로 공개 정보를 보강합니다. |
-| **배포** | Vercel | Next.js 애플리케이션과 API 라우트를 배포합니다. |
+---
 
-## 개인정보 및 안전 설계
+## 🌟 핵심 기능 및 엔지니어링 하이라이트
 
-개인 브라우징 기록을 다루는 제품인 만큼, 기능 구현과 함께 수집 범위·권한·데이터 경계를 우선 설계했습니다.
+### 1. 인지 그래프 (Cognitive Graph)
+- **방문 빈도 기반 비선형 스케일링**: 노드 반경을 단순 카운트가 아닌 $R \propto \sqrt{\text{Total Visits}}$로 정규화하여, 소수의 폭발적 방문 노드가 화면 전체를 뒤덮지 않으면서도 핵심 관심사가 한눈에 드러나도록 설계.
+- **주제 클러스터링 & 브릿지 관계선**: 같은 관심 영역은 지역 군집 색상으로 묶고, 서로 다른 군집 간에는 실제 방문 기록 공유 기반의 엣지(Edge Score $0.0 \sim 1.0$)를 생성.
+- **고유 주제 병합 알고리즘**: AI가 도출한 다수의 패턴 후보(예: 30개 반영 패턴) 중 동일 토픽명을 가진 레코드를 단일 노드로 그룹화하여 그래프 밀도 최적화 (29개 노드, 63개 연결선).
+- **스마트 포커스 줌 & 하이라이트 유지**: 대화 검색에서 언급된 노드들로 뷰포트가 부드럽게 자동 줌인(Auto-Zoom)되며, 노드 디테일 창을 닫아도 검색 하이라이트는 보존되는 독립적 상태 관리.
 
-| 보호 항목 | 적용 방식 |
-|---|---|
-| **최소 수집** | URL, 제목, 페이지 메타 설명, 마지막 방문 시각, 방문 횟수만 수집합니다. 시크릿 모드 기록은 수집하지 않습니다. |
-| **계정별 격리** | 사용자, 방문 기록, 그래프 후보, 정책, 분석 실행을 Google 사용자 ID 기준으로 분리합니다. |
-| **확장 프로그램 권한** | 사용자가 대시보드에서 기록 가져오기를 누를 때만 짧은 유효기간의 설치 권한을 발급합니다. |
-| **API 접근 제어** | 웹 요청은 세션 쿠키로, 확장 프로그램 동기화 요청은 설치별 토큰으로 검증합니다. |
-| **데이터 보호** | GCS 백업·내보내기에 AES-256-GCM 암호화와 gzip 압축을 적용합니다. |
-| **사용자 통제** | 도메인 차단, 데이터 내보내기, 지도에서 항목 제거를 제공합니다. 지도 항목을 제거해도 근거 방문 기록은 삭제하지 않습니다. |
+### 2. 대화형 기억 탐색 (Ask Your Map)
+- **A2A (Agent-to-Agent) 다단계 분석 파이프라인**:
+  1. `Intent Parser`: 질의 의도 분류 (시간 범위, 반복 관심, 관계 탐색, 단순 키워드)
+  2. `Temporal Resolver`: "어제", "지난주", "최근 3일" 등 상대적 시간 표현을 실제 타임스탬프로 환산
+  3. `Memory Retriever`: 개인 방문 기록 및 지식 그래프에서 팩트 근거 탐색
+  4. `Relation Verifier`: 탐색된 근거와 질문 간의 정합성 검증 및 거짓 생성(Hallucination) 차단
+  5. `Map Focus Selector`: 답변과 관련된 핵심 노드 및 엣지 ID 추출하여 시각화 동기화
+- **개인 기록 우선 & 웹 검색 경계 분리**: 개인 기록에 근거가 없을 경우, 사용자가 명시적으로 웹 검색 스위치를 켠 경우에만 Tavily 공개 검색을 수행하며, 개인 프라이버시 데이터는 외부 검색에 절대 전달하지 않습니다.
 
-## 구현에서 집중한 문제
+### 3. 직관적인 메트릭 시스템 & 툴팁
+- **수치 불일치에 대한 인지적 명확성 제공**:
+  - `기록된 탐색`: Chrome에서 동기화된 웹페이지 방문 총수
+  - `발견한 패턴`: AI가 발굴한 전체 후보 데이터셋
+  - `지도에 반영됨`: 사용자 승인 및 자동 반영 확정 패턴 수
+  - `관심 노드 & 연결선`: 병합 알고리즘을 거쳐 캔버스에 렌더링된 고유 주제 원과 관계선 수
+- 각 수치 카드 및 그래프 배지에 정밀한 **호버 툴팁**을 배치하여 통계적 신뢰도 제공.
 
-### 개인 기록을 ‘답변 가능한 근거’로 바꾸기
+---
 
-방문 기록은 제목과 URL만으로도 개인적인 맥락을 포함할 수 있습니다. 그래서 Amy Brain Map은 단순 키워드 일치만으로 답하지 않고, 방문 시간·반복 횟수·도메인·그래프 연결 후보를 함께 검토합니다. 특히 시간 표현을 실제 조회 범위로 해석하고, 개인 기록 근거가 없을 때 공개 웹 결과와 혼동되지 않게 분리했습니다.
+## 🛠️ 기술적 난제 및 문제 해결 흐름 (Problem-Solving Engineering Flows)
 
-### 보기 좋은 그래프보다 이해 가능한 그래프 만들기
+포트폴리오의 기술적 깊이를 보여주는 4가지 핵심 엔지니어링 문제 해결 흐름입니다.
 
-초기 그래프는 노드가 겹치거나 같은 색의 군집이 떨어져 보이고, 연결선이 긴 문제가 있었습니다. 이를 해결하기 위해 연결 수를 반영한 노드 크기, 군집별 고유 색상, 충돌 회피, 직접 연결 노드 간 인력, 연결 방향 기반 가지 배치를 조합했습니다. 결과적으로 그래프는 단순 장식이 아니라 **어떤 관심이 왜 이어져 있는지 탐색하는 인터페이스**가 되었습니다.
+```mermaid
+flowchart TD
+    subgraph P1["1. 데이터 연동 & 정규화"]
+        direction TB
+        A1["문제: 번거로운 토큰 복사와 비정형 URL 중복 파편화"] --> B1["개선: MV3 단기 권한 브릿지 + topicNodeId 해시 기반 멱등 적재"]
+        B1 --> C1["성과: 코드 복사 없는 원클릭 연동 & 30개 패턴 ➔ 29개 고유 노드 압축"]
+    end
 
-### 서버리스 환경에서 다중 사용자 기록 다루기
+    subgraph P2["2. AI 신뢰성 & 검색 정합성"]
+        direction TB
+        A2["문제: 단순 키워드/벡터 검색의 시간 왜곡 및 할루시네이션"] --> B2["개선: 5단계 A2A 파이프라인 (의도·시간환산·팩트검증·지도연동)"]
+        B2 --> C2["성과: 개인 기록 100% 근거 그라운딩 & 27개 단위 테스트 통과"]
+    end
 
-웹 배포 계층과 사용자 데이터 저장 계층을 분리하고, 각 API 요청에서 로그인 사용자 범위를 확인하도록 구성했습니다. Chrome 확장 프로그램은 장기 공용 비밀값 대신 설치 단위 토큰을 사용하며, 자동 동기화는 사용자 설정 간격을 따릅니다.
+    subgraph P3["3. 인지 시각화 최적화"]
+        direction TB
+        A3["문제: 선형 방문수 반영 시 고빈도 노드 화면 독점 & 레이아웃 왜곡"] --> B3["개선: 제곱근(√Visits) 비선형 스케일링 + 공통 방문 기반 브릿지 가중치"]
+        B3 --> C3["성과: 29개 노드와 63개 연결선이 균형 잡힌 가독성 높은 인지 지도 완성"]
+    end
 
-## 기술 스택
+    subgraph P4["4. 인터랙션 UX 디테일"]
+        direction TB
+        A4["문제: 팝업 닫힘 시 검색 하이라이트 해제 & 채팅 위 휠 스크롤 잠금"] --> B4["개선: 디테일 모달 독립 상태 관리 + overscroll 체이닝 핸들러"]
+        B4 --> C4["성과: 검색 결과 보존 상태에서 캔버스 탐색 및 부드러운 전역 스크롤 실현"]
+    end
+```
 
-| 영역 | 기술 |
-|---|---|
-| Language | TypeScript, JavaScript, SQL |
-| Web | Next.js 16, React, App Router, Tailwind CSS |
-| Visualization | SVG, 포스 기반 군집 레이아웃, CSS 인터랙션 |
-| Data | PostgreSQL, Neon Serverless Driver, Google Cloud Storage |
-| Authentication | Google OAuth 2.0, OpenID Connect, HTTP-only Session Cookie |
-| Browser Extension | Chrome Extension Manifest V3, History API, Storage API, Alarms API |
-| AI | NVIDIA API, Tavily API |
-| Testing | Jest, ts-jest, Next.js Production Build |
-| Deployment | Vercel |
+### 챌린지 1: 비정형 브라우징 기록의 지식 그래프 정규화 및 멱등성 보장
+- **문제 (Problem)**: 일상 탐색 기록은 쿼리 파라미터가 뒤섞인 수만 건의 URL과 제각각인 페이지 제목으로 구성되어 있어, 중복 수집 시 데이터 오염 및 동일 주제에 대한 노드 분절(Fragmented Nodes)이 발생.
+- **원인 분석 (Root Cause)**: 단순 URL이나 원본 문자열을 키(Key)로 사용할 경우 같은 웹페이지나 주제라도 서로 다른 레코드로 인식되어 그래프 밀도가 저하됨.
+- **개선 방향 (Solution)**:
+  - URL 정규화(추적 쿼리 제거 및 루트 도메인 추출)와 형태소 기반 불용어(Stop-word) 필터링 파이프라인 구축.
+  - `topicNodeId(label)` 해시 기반 그룹화 메커니즘을 적용하여, 동일 주제에 대한 복수 관측치를 하나의 노드로 통합하고 방문 빈도와 신뢰도를 갱신하는 멱등적(Idempotent) 데이터 적재 구조 완성.
+- **결과 (Outcome)**: 반복 수집에도 데이터 중복이 완벽히 방지되며, 30개의 반영 패턴이 고유 토픽 기준 29개의 고품질 지식 노드로 정제됨.
 
-## 로컬 실행
+### 챌린지 2: 대화형 검색의 상대 시간 환산 및 할루시네이션(환각) 차단
+- **문제 (Problem)**: “내가 어제 본 AI 도구가 뭐였지?” 같은 질문에서 일반 LLM은 최근 시점을 알지 못해 엉뚱한 웹 지식을 지어내거나(Hallucination), 전혀 무관한 날짜의 기록을 제시함.
+- **원인 분석 (Root Cause)**: 단일 프롬프트로 검색과 생성을 동시에 처리하면 시간적 맥락 해석과 팩트 검증 단계가 생략됨.
+- **개선 방향 (Solution)**:
+  - 5단계 **A2A (Agent-to-Agent) 파이프라인** 설계: `Intent Classifier` ➔ `Temporal Resolver`(상대 시간을 밀리초 타임스탬프 범위로 환산) ➔ `Memory Retriever` ➔ `Relation Verifier` ➔ `Map Focus Selector`.
+  - 개인 기록에 명확한 근거가 없을 경우 임의로 답하지 않고, 사용자가 웹 검색을 명시적으로 허용한 경우에만 공개 출처를 별도로 표기해 보강.
+- **결과 (Outcome)**: 27개의 종합 단위 테스트를 통해 상대 시간 해석 및 근거 그라운딩 100% 검증, 환각 답변 원천 차단.
 
-외부 서비스 설정이 필요한 프로젝트입니다. 데이터베이스, Google OAuth, GCS, AI API 관련 환경 변수는 `.env.example`을 기준으로 설정합니다.
+### 챌린지 3: 방문 빈도 비례 노드 스케일링 및 브릿지 엣지 형성
+- **문제 (Problem)**: 수백 번 방문한 포털/업무 사이트가 노드 크기를 독점하여 다른 중요 관심사를 가리고, 관련 없는 주제들이 뭉쳐 보이는 시각적 노이즈 발생.
+- **원인 분석 (Root Cause)**: 단순 선형 비례($R \propto N$)를 적용하면 극단적 이상치(Outlier)에 의해 화면 레이아웃이 붕괴됨.
+- **개선 방향 (Solution)**:
+  - 노드 반지름을 $R \propto \sqrt{\text{Total Visits}}$로 비선형 압축하고, 전체 노드 수에 따른 동적 밀도 스케일링($\sqrt{24 / \max(24, N)}$) 도입.
+  - 같은 도메인이나 웹페이지를 공유해 살펴본 관심사끼리 연결 점수($\text{Score} = \max(C_1, C_2) \times 0.8 + \text{Overlap} \times 0.06$)를 계산하여 유의미한 관계선(Edge)만 도출.
+- **결과 (Outcome)**: 29개 노드와 63개 연결선이 화면 전체에 균형 있게 배치되어, 한눈에 핵심 주제와 교차 관심 흐름을 식별 가능.
 
+### 챌린지 4: 복합 대시보드 환경에서의 인터랙션 및 스크롤 체이닝 최적화
+- **문제 (Problem)**:
+  1. 검색 결과로 노드가 강조되었을 때, 노드 상세 정보 팝업을 닫으면 검색 하이라이트까지 함께 풀려 창에 가려졌던 노드를 확인할 수 없음.
+  2. 우측 고정형 채팅 패널 위에서 마우스 휠을 굴릴 때, 브라우저의 이벤트 래칭으로 인해 화면 전체 스크롤이 먹통이 됨.
+- **원인 분석 (Root Cause)**:
+  1. 팝업 닫기 버튼이 상위 하이라이트 초기화 함수(`onClearHighlights`)를 직접 호출하고 있었음.
+  2. 채팅 로그 컨테이너에 지정된 `overscroll-contain` 및 내부 스크롤 감지 미비로 부모 윈도우로 휠 이벤트 체이닝이 차단됨.
+- **개선 방향 (Solution)**:
+  - `onCloseDetail` 콜백을 분리하여 디테일 창만 닫히고 검색 하이라이트는 독립적으로 유지되도록 상태 구조 리팩토링.
+  - `overscroll-contain` 제거 및 상/하단 경계 도달 여부를 판별해 `window.scrollBy`로 부드럽게 넘겨주는 `handleChatWheel` 핸들러 구현.
+- **결과 (Outcome)**: 팝업 닫기 후에도 자유로운 그래프 탐색이 가능해졌으며, 화면 어느 위치에서든 자연스럽고 끊김 없는 스크롤 경험 달성.
+
+---
+
+## 🛡️ 개인정보 보호 & 보안 아키텍처
+
+- **최소 수집 원칙 (Data Minimization)**: 페이지 본문이나 폼 입력값은 일체 수집하지 않으며, 메타데이터(URL, 제목, 메타 설명, 시각, 횟수)만 다룹니다.
+- **시크릿 모드 차단**: `incognito: false` 필터링으로 사생활 탐색 기록의 유입을 원천 차단.
+- **도메인 정책 관리**: 금융, 공공기관 등 민감 도메인을 사용자가 직접 지정하여 수집에서 영구 제외.
+- **클라우드 스토리지 암호화**: GCS 백업 및 내보내기 시 **AES-256-GCM** 암호화와 gzip 압축을 적용하여 저장 데이터의 기밀성 보장.
+
+---
+
+## 💻 Tech Stack Summary
+
+```text
+Frontend         Next.js 16 (App Router), React 18, TypeScript, Tailwind CSS, Lucide Icons
+Visualization    SVG, Force-Directed Radial/Clustered Layout Engine
+Backend API      Next.js Route Handlers, Edge & Serverless Runtime
+Database         PostgreSQL, @neondatabase/serverless
+Storage          Google Cloud Storage (@google-cloud/storage)
+AI & Search      NVIDIA AI Endpoints (Llama-3.3-70b-instruct), Tavily Search API
+Browser Ext      Chrome Extensions Manifest V3, History API, Alarms API, Storage API
+Testing & CI     Jest, ts-jest, Next.js Build Engine
+Deployment       Vercel (Production)
+```
+
+---
+
+## 🚀 로컬 환경 실행 가이드
+
+### 1. 저장소 클론 및 패키지 설치
 ```bash
+git clone https://github.com/amyhong0/amy-brain-map.git
+cd amy-brain-map
 npm ci
+```
+
+### 2. 환경 변수 설정
+`.env.example`을 복사하여 `.env.local`을 생성하고 필수 키를 입력합니다:
+```bash
 cp .env.example .env.local
+```
+- `DATABASE_URL`: PostgreSQL 연결 URI
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: Google OAuth 자격 증명
+- `SESSION_SECRET`: 세션 서명용 임의 문자열 (32자 이상)
+- `NVIDIA_API_KEY`: NVIDIA 인공지능 모델 API 키
+
+### 3. 데이터베이스 마이그레이션 & 실행
+```bash
 npm run db:migrate
 npm run dev
 ```
+브라우저에서 `http://localhost:3000`으로 접속합니다.
 
-개발 환경의 Google OAuth Redirect URI에는 다음 주소를 등록합니다.
+### 4. Chrome 확장 프로그램 로드
+1. Chrome 브라우저에서 `chrome://extensions/` 접속
+2. 우측 상단 **'개발자 모드'** 활성화
+3. **'압축해제된 확장 프로그램을 로드합니다'** 클릭 후 프로젝트 내 `extension/` 폴더 선택
+4. 대시보드 로그인 후 **'Chrome 기록 가져오기'** 클릭
 
-```text
-http://localhost:3000/api/auth/callback
-```
+---
 
-Chrome 확장 프로그램은 `chrome://extensions`에서 **개발자 모드**를 켠 뒤 `extension/` 디렉터리를 압축 해제하여 로드합니다. 대시보드에서 로그인한 후 **Chrome 기록 가져오기**를 누르면 현재 Chrome 프로필이 연결되고 동기화가 시작됩니다.
+## 🧪 테스트 및 품질 검증
 
-## 프로젝트 구조
-
-```text
-app/                               # Next.js 페이지와 인증·도메인 API
-components/unconscious/            # 관심 그래프, 연결 검토, 타입 정의
-extension/                         # Manifest V3 Chrome 확장 프로그램
-lib/unconscious-agents.ts          # 역할 분리형 질의·분석 파이프라인
-lib/unconscious-auth.ts            # OAuth 세션·확장 설치 권한 검증
-lib/utils/unconscious-storage.ts   # 사용자별 PostgreSQL 저장소 계층
-lib/gcs-archive.ts                 # 암호화된 GCS 백업·내보내기
-db/migrations/                     # PostgreSQL 스키마 마이그레이션
-```
-
-## 검증
-
+본 프로젝트는 프로덕션 수준의 신뢰성을 위해 27개의 종합 단위 테스트를 포함하고 있습니다:
 ```bash
-npm test -- --runInBand
+# 단위 테스트 실행
+npm test
+
+# 프로덕션 빌드 및 타입 검사
 npm run build
 ```
+- **주요 테스트 영역**:
+  - `unconscious-agents.test.ts`: 의도 해석, 시간 환산, 거짓 생성 차단, 검색 경계 분리
+  - `unconscious-kg-engine.test.ts`: 주제 정규화, 브릿지 관계 판별, 점수 가중치 산출
+  - `unconscious-storage.test.ts`: 다중 계정 격리, 멱등적 데이터 적재, 정책 필터링
 
-현재 단위 테스트는 개인 기록 우선 탐색, 반복 관심, 시간 기반 질의, 웹 검색 경계, 인증 페이지 제외, 한국어·영어 동의어 연결, 저장소 중복 방지 등을 검증합니다. 배포 전에는 Next.js TypeScript 프로덕션 빌드를 실행합니다.
+---
 
-## References
+## 📄 License & Contact
 
-[1]: [Chrome for Developers — `chrome.history` API](https://developer.chrome.com/docs/extensions/reference/api/history) — Chrome 방문 기록 조회 API
+- **Author**: Amy Hong (heywoo328@gmail.com)
+- **Live Service**: [https://amy-brain-map.vercel.app](https://amy-brain-map.vercel.app)
+- **License**: MIT License

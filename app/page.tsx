@@ -127,14 +127,59 @@ function StatusPill({ children, tone = 'violet' }: { children: React.ReactNode; 
   return <span data-tone={tone} className={`aether-status inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles[tone]}`}>{children}</span>;
 }
 
-function Metric({ value, label, tone = 'blue' }: { value: number | string; label: string; tone?: 'blue' | 'violet' | 'amber' | 'green' }) {
+function Metric({
+  value,
+  label,
+  tooltip,
+  tooltipAlign = 'center',
+  tone = 'blue',
+}: {
+  value: number | string;
+  label: string;
+  tooltip?: string;
+  tooltipAlign?: 'left' | 'right' | 'center';
+  tone?: 'blue' | 'violet' | 'amber' | 'green';
+}) {
   const colors = {
     blue: 'from-blue-50 to-cyan-50 text-blue-700 ring-blue-100',
     violet: 'from-violet-50 to-fuchsia-50 text-violet-700 ring-violet-100',
     amber: 'from-amber-50 to-orange-50 text-amber-700 ring-amber-100',
     green: 'from-emerald-50 to-teal-50 text-emerald-700 ring-emerald-100',
   };
-  return <div className={`aether-metric rounded-2xl p-3.5 ${colors[tone]}`}><p className="text-2xl font-extrabold tracking-tight">{value}</p><p className="mt-1 text-[11px] font-medium text-slate-600">{label}</p></div>;
+
+  const alignClasses = {
+    left: 'left-0',
+    right: 'right-0',
+    center: 'left-1/2 -translate-x-1/2',
+  };
+
+  const arrowClasses = {
+    left: 'left-6',
+    right: 'right-6',
+    center: 'left-1/2 -translate-x-1/2',
+  };
+
+  return (
+    <div
+      title={tooltip}
+      className={`aether-metric group relative cursor-help rounded-2xl p-3.5 transition hover:brightness-105 ${colors[tone]}`}
+    >
+      <p className="text-2xl font-extrabold tracking-tight">{value}</p>
+      <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-slate-600">
+        <span>{label}</span>
+      </p>
+      {tooltip && (
+        <div
+          role="tooltip"
+          className={`pointer-events-none absolute bottom-full mb-2 z-30 hidden w-52 rounded-xl border border-white/15 bg-slate-950/95 p-2.5 text-[11px] font-normal leading-4 text-slate-200 shadow-2xl backdrop-blur-md group-hover:block ${alignClasses[tooltipAlign]}`}
+        >
+          <p className="font-bold text-blue-300">{label}</p>
+          <p className="mt-1 text-slate-300">{tooltip}</p>
+          <div className={`absolute -bottom-1 h-2 w-2 rotate-45 border-b border-r border-white/15 bg-slate-950 ${arrowClasses[tooltipAlign]}`} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -531,13 +576,24 @@ export default function Home() {
     setSelectedCandidate(null);
     setSelectedNodeDetail(null);
   };
+  const closeMapDetail = () => {
+    setSelectedCandidate(null);
+    setSelectedNodeDetail(null);
+  };
   const handleMapNodeSelect = (candidate: DiscoveryCandidate, detail: MapNodeDetail) => {
     if (selectedNodeDetail?.id === detail.id) {
-      clearMapHighlights();
+      closeMapDetail();
       return;
     }
     setSelectedCandidate(candidate);
     setSelectedNodeDetail(detail);
+  };
+  const handleChatWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
+    const isScrollable = el.scrollHeight > el.clientHeight;
+    if (!isScrollable || (el.scrollTop <= 0 && event.deltaY < 0) || (el.scrollTop + el.clientHeight >= el.scrollHeight - 1 && event.deltaY > 0)) {
+      window.scrollBy({ top: event.deltaY, behavior: 'auto' });
+    }
   };
   const removeNodeFromMap = async () => {
     if (!user || !pendingMapRemoval || isRemovingFromMap) return;
@@ -706,9 +762,9 @@ export default function Home() {
         {approvalNotice && <div role="status" className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{approvalNotice}</div>}
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[250px_minmax(0,1fr)_minmax(420px,.82fr)] xl:items-start">
-          <aside className="brain-card order-2 rounded-3xl p-4 xl:col-start-1 xl:row-start-2 xl:order-1 xl:sticky xl:top-24"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-600"><Network className="h-4 w-4" /></div><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-600">Map lens</p><p className="text-sm font-bold text-slate-900">한눈에 보는 흐름</p></div></div><div className="mt-5 grid grid-cols-2 gap-2"><Metric value={privacy?.totalVisits ?? '—'} label="기록된 탐색" /><Metric value={candidates.length} label="발견한 패턴" tone="violet" /><Metric value={summary.pending} label="연결 검토 대상" tone="amber" /><Metric value={summary.confirmed} label="지도에 반영됨" tone="green" /></div><div className="mt-5 rounded-2xl bg-slate-50 p-3"><div className="flex items-start gap-2"><Activity className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><p className="text-[11px] leading-5 text-slate-600">{summary.latestRun ? `최근 분석에서 ${summary.latestRun.visitCount}개의 새 기록을 읽고 ${summary.latestRun.candidateCount}개의 지도 패턴을 만들었습니다.` : 'Chrome 기록을 가져오면 반복 관심과 주제 사이의 연결을 찾아 제안합니다.'}</p></div></div></aside>
+          <aside className="brain-card order-2 rounded-3xl p-4 xl:col-start-1 xl:row-start-2 xl:order-1 xl:sticky xl:top-24"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-600"><Network className="h-4 w-4" /></div><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-600">Map lens</p><p className="text-sm font-bold text-slate-900">한눈에 보는 흐름</p></div></div><div className="mt-5 grid grid-cols-2 gap-2"><Metric value={privacy?.totalVisits ?? '—'} label="기록된 탐색" tooltip="Chrome에서 동기화된 웹페이지 방문 기록의 총 개수입니다." tooltipAlign="left" /><Metric value={candidates.length} label="발견한 패턴" tone="violet" tooltip="방문 기록을 분석해 AI가 찾아낸 관심 주제·재방문·연결 등 전체 지식 패턴의 총 개수입니다." tooltipAlign="right" /><Metric value={summary.pending} label="연결 검토 대상" tone="amber" tooltip="새로 발견된 패턴 중 아직 지도 반영 여부를 검토 중인 대기 항목의 개수입니다." tooltipAlign="left" /><Metric value={summary.confirmed} label="지도에 반영됨" tone="green" tooltip="승인되었거나 신뢰도가 높아 내 지도에 실제로 반영 완료된 패턴의 개수입니다." tooltipAlign="right" /></div><div className="mt-5 rounded-2xl bg-slate-50 p-3"><div className="flex items-start gap-2"><Activity className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><p className="text-[11px] leading-5 text-slate-600">{summary.latestRun ? `최근 분석에서 ${summary.latestRun.visitCount}개의 새 기록을 읽고 ${summary.latestRun.candidateCount}개의 지도 패턴을 만들었습니다.` : 'Chrome 기록을 가져오면 반복 관심과 주제 사이의 연결을 찾아 제안합니다.'}</p></div></div></aside>
 
-          <div className="order-1 min-w-0 space-y-5 xl:contents xl:space-y-0"><section className="aether-hero xl:col-span-3 xl:row-start-1 relative isolate overflow-hidden rounded-3xl border p-6 text-white md:p-8"><div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full border border-white/15" /><div aria-hidden="true" className="pointer-events-none absolute -bottom-36 left-[18%] h-64 w-64 rounded-full bg-violet-500/[.14] blur-3xl" /><div className="relative flex flex-col gap-6"><div className="max-w-none"><p className="text-xs font-extrabold tracking-[0.24em] text-blue-200">THOUGHTS, MADE VISIBLE</p><h2 className="display-serif break-keep mt-4 text-[30px] font-medium leading-[1.32] tracking-[0.012em] sm:text-[42px] sm:leading-[1.24] sm:tracking-[0.014em] lg:text-[50px] lg:leading-[1.18] lg:tracking-[0.018em]"><span className="block lg:whitespace-nowrap">스쳐 지나간 웹페이지 속에서,</span><span className="block lg:whitespace-nowrap">내 사고의 흐름을 발견하세요.</span></h2><p className="mt-5 max-w-none text-sm leading-7 text-slate-300 md:text-[15px]">무심코 열어본 페이지들을 모아 어떤 주제를 반복해 살펴봤는지 분석하고, 서로 이어지는 관심의 흐름을 한눈에 보여 줍니다.</p></div><div className="flex shrink-0 flex-col gap-2 lg:self-end lg:items-end"><button type="button" disabled={!user || isHistorySyncing || isAnalyzing} onClick={requestHistoryFromChrome} className="aether-action-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-55">{isHistorySyncing || isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isHistorySyncing ? 'Chrome 기록을 읽는 중…' : isAnalyzing ? '패턴을 분석하는 중…' : 'Chrome 기록 가져오기'}</button><div className="max-w-[260px] lg:text-right"><p aria-live="polite" className="text-[11px] leading-5 text-slate-300">{historySyncMessage || (user ? 'Chrome에 현재 남아 있는 방문 기록을 읽어와 지도에 반영합니다.' : 'Google 로그인 뒤 본인의 Chrome 프로필을 연결하세요.')}</p>{isHistorySyncing && historySyncProgress !== null && <div className="mt-2 flex items-center gap-2 lg:justify-end"><div role="progressbar" aria-label="Chrome 기록 동기화 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={historySyncProgress} className="h-1.5 w-36 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-blue-300 transition-[width] duration-300" style={{ width: `${historySyncProgress}%` }} /></div><span className="min-w-8 text-right text-[11px] font-bold text-blue-200">{historySyncProgress}%</span></div>}</div></div></div></section><div className="xl:col-start-2 xl:row-start-2"><UnconsciousMap candidates={candidates} selectedId={selectedCandidate?.id} highlightedIds={highlightedIds} highlightedVisits={highlightedVisits} onSelect={handleMapNodeSelect} onClearHighlights={clearMapHighlights} onRequestRemove={setPendingMapRemoval} /></div></div>
+          <div className="order-1 min-w-0 space-y-5 xl:contents xl:space-y-0"><section className="aether-hero xl:col-span-3 xl:row-start-1 relative isolate overflow-hidden rounded-3xl border p-6 text-white md:p-8"><div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full border border-white/15" /><div aria-hidden="true" className="pointer-events-none absolute -bottom-36 left-[18%] h-64 w-64 rounded-full bg-violet-500/[.14] blur-3xl" /><div className="relative flex flex-col gap-6"><div className="max-w-none"><p className="text-xs font-extrabold tracking-[0.24em] text-blue-200">THOUGHTS, MADE VISIBLE</p><h2 className="display-serif break-keep mt-4 text-[30px] font-medium leading-[1.32] tracking-[0.012em] sm:text-[42px] sm:leading-[1.24] sm:tracking-[0.014em] lg:text-[50px] lg:leading-[1.18] lg:tracking-[0.018em]"><span className="block lg:whitespace-nowrap">스쳐 지나간 웹페이지 속에서,</span><span className="block lg:whitespace-nowrap">내 사고의 흐름을 발견하세요.</span></h2><p className="mt-5 max-w-none text-sm leading-7 text-slate-300 md:text-[15px]">무심코 열어본 페이지들을 모아 어떤 주제를 반복해 살펴봤는지 분석하고, 서로 이어지는 관심의 흐름을 한눈에 보여 줍니다.</p></div><div className="flex shrink-0 flex-col gap-2 lg:self-end lg:items-end"><button type="button" disabled={!user || isHistorySyncing || isAnalyzing} onClick={requestHistoryFromChrome} className="aether-action-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-55">{isHistorySyncing || isAnalyzing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{isHistorySyncing ? 'Chrome 기록을 읽는 중…' : isAnalyzing ? '패턴을 분석하는 중…' : 'Chrome 기록 가져오기'}</button><div className="max-w-[260px] lg:text-right"><p aria-live="polite" className="text-[11px] leading-5 text-slate-300">{historySyncMessage || (user ? 'Chrome에 현재 남아 있는 방문 기록을 읽어와 지도에 반영합니다.' : 'Google 로그인 뒤 본인의 Chrome 프로필을 연결하세요.')}</p>{isHistorySyncing && historySyncProgress !== null && <div className="mt-2 flex items-center gap-2 lg:justify-end"><div role="progressbar" aria-label="Chrome 기록 동기화 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={historySyncProgress} className="h-1.5 w-36 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-blue-300 transition-[width] duration-300" style={{ width: `${historySyncProgress}%` }} /></div><span className="min-w-8 text-right text-[11px] font-bold text-blue-200">{historySyncProgress}%</span></div>}</div></div></div></section><div className="xl:col-start-2 xl:row-start-2"><UnconsciousMap candidates={candidates} selectedId={selectedCandidate?.id} highlightedIds={highlightedIds} highlightedVisits={highlightedVisits} onSelect={handleMapNodeSelect} onClearHighlights={clearMapHighlights} onCloseDetail={closeMapDetail} onRequestRemove={setPendingMapRemoval} /></div></div>
 
           <aside className="order-3 xl:col-start-3 xl:row-start-2 xl:sticky xl:top-24">
             <section className="brain-card flex h-[min(680px,calc(100svh-2rem))] flex-col overflow-hidden rounded-3xl lg:h-[min(720px,calc(100svh-7rem))]">
@@ -720,7 +776,7 @@ export default function Home() {
                 <p className="mt-2 text-xs leading-5 text-slate-600">열어본 페이지 기록을 바탕으로 관심의 흐름을 함께 살펴봅니다.</p>
               </div>
 
-              <div ref={chatLogRef} role="log" aria-live="polite" aria-label="기억 탐색 대화" className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5">
+              <div ref={chatLogRef} role="log" aria-live="polite" aria-label="기억 탐색 대화" onWheel={handleChatWheel} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-5">
                 {chatTurns.length === 0 ? <div className="flex gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><Bot className="h-4 w-4" /></div><div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-3"><p className="text-sm font-semibold leading-6 text-slate-800">무엇이 궁금하신가요?</p><p className="mt-1 text-xs leading-5 text-slate-500">시작 질문을 고르거나, 열어본 페이지에 대해 직접 물어보세요.</p><div className="mt-3 flex flex-wrap gap-2">{STARTER_QUESTIONS.map((starter) => <button type="button" key={starter} onClick={() => setQuestion(starter)} className="min-h-10 rounded-xl border border-violet-100 bg-white px-3 text-left text-[11px] font-semibold leading-4 text-violet-800 transition hover:border-violet-200 hover:bg-violet-50">{starter}</button>)}</div></div></div> : chatTurns.map((turn) => <React.Fragment key={turn.id}><div className="flex justify-end"><div className="max-w-[86%] rounded-2xl rounded-tr-sm bg-blue-600 px-3.5 py-3 text-sm font-medium leading-6 text-white">{turn.question}</div></div><div className="flex gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><Bot className="h-4 w-4" /></div><div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-3"><ChatMarkdown content={turn.result.answer} />{!turn.result.webSearchRequested && <StatusPill tone="slate">개인 기록만 사용</StatusPill>}{turn.result.webSearchRequested && !turn.result.webSearchAttempted && <StatusPill tone="slate">개인 기록 우선</StatusPill>}{turn.result.webSearchUsed && <StatusPill tone="violet">웹 검색 보강</StatusPill>}{turn.result.webSearchAttempted && !turn.result.webSearchUsed && <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">{turn.result.webSearchConfigured ? (turn.result.webSearchError ? '웹 검색에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.' : '웹 검색을 실행했지만 답변에 쓸 공개 자료를 찾지 못했습니다.') : '웹 검색을 켰지만 검색 키가 아직 설정되지 않았습니다.'}</p>}{turn.result.webSources?.length ? <div className="mt-3 border-t border-slate-200 pt-3"><p className="text-[11px] font-bold text-blue-700">웹 검색 출처</p><div className="mt-2 space-y-2">{turn.result.webSources.slice(0, 3).map((source) => <a href={source.url} target="_blank" rel="noreferrer" className="brain-card-interactive block rounded-xl border border-slate-100 bg-white p-2.5" key={source.url}><div className="flex items-center gap-1"><p className="truncate text-[11px] font-bold text-slate-800">{source.title}</p><ExternalLink className="ml-auto h-3 w-3 shrink-0 text-blue-500" /></div><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{source.snippet}</p></a>)}</div></div> : null}<div className="mt-3 border-t border-slate-200 pt-3"><p className="text-[11px] font-bold text-violet-700">이어서 물어보기</p><div className="mt-2 flex flex-wrap gap-2">{followUpSuggestions(turn.result).map((followUp) => <button type="button" key={followUp} onClick={() => setQuestion(followUp)} className="min-h-10 rounded-xl border border-violet-100 bg-white px-3 text-left text-[11px] font-semibold leading-4 text-violet-800 transition hover:border-violet-200 hover:bg-violet-50">{followUp}</button>)}</div></div></div></div></React.Fragment>)}
                 {isLoading && <div className="flex gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><Bot className="h-4 w-4" /></div><div className="rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-3.5 py-3 text-xs font-semibold text-slate-500"><RefreshCw className="mr-2 inline h-3.5 w-3.5 animate-spin" />기록에서 답을 찾는 중입니다.</div></div>}
               </div>

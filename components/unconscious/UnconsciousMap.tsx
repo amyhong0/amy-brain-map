@@ -18,6 +18,7 @@ interface UnconsciousMapProps {
   highlightedVisits?: HighlightedVisit[];
   onSelect: (candidate: DiscoveryCandidate, detail: MapNodeDetail) => void;
   onClearHighlights?: () => void;
+  onCloseDetail?: () => void;
   onRequestRemove?: (detail: MapNodeDetail) => void;
 }
 
@@ -408,7 +409,7 @@ function reedSway(point: MapPoint, pointer: MapPoint | null) {
   };
 }
 
-export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect, onClearHighlights, onRequestRemove }: UnconsciousMapProps) {
+export default function UnconsciousMap({ candidates, selectedId, highlightedIds = [], highlightedVisits = [], onSelect, onClearHighlights, onCloseDetail, onRequestRemove }: UnconsciousMapProps) {
   const [view, setView] = useState<'all' | 'pending' | 'confirmed'>('all');
   const [pointer, setPointer] = useState<MapPoint | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -606,6 +607,10 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
   const handleClearClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (dragMovedRef.current) { dragMovedRef.current = false; return; }
     if ((event.target as Element).closest('[data-graph-node], [data-graph-popover]')) return;
+    if (selectedNodeDetail && onCloseDetail) {
+      onCloseDetail();
+      return;
+    }
     onClearHighlights?.();
   };
 
@@ -678,8 +683,36 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
           </div>
         ) : (
           <>
-            <div className="pointer-events-none absolute left-6 top-6 z-10 hidden rounded-xl border border-white/10 bg-slate-950/72 px-3 py-2 text-[11px] text-slate-300 backdrop-blur md:block">
-              <p className="font-semibold text-slate-100">{visibleNodes.length}개 관심 · {visibleEdges.length}개 연결</p>
+            <div className="absolute left-6 top-6 z-10 hidden rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-[11px] text-slate-300 shadow-xl shadow-black/20 backdrop-blur md:block">
+              <div className="flex items-center gap-1.5 font-semibold text-slate-100">
+                <span
+                  className="group/node relative cursor-help underline decoration-slate-500/60 underline-offset-2 transition hover:text-blue-300"
+                  title="지도에 반영된 패턴들이 고유 주제별로 병합되어 표시된 노드(주제 원)의 총 개수입니다."
+                >
+                  {visibleNodes.length}개 관심
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-56 rounded-xl border border-white/15 bg-slate-950/95 p-2.5 text-[11px] font-normal leading-4 text-slate-200 shadow-2xl backdrop-blur-md group-hover/node:block"
+                  >
+                    <span className="block font-bold text-blue-300 mb-0.5">관심 노드 ({visibleNodes.length}개)</span>
+                    반영된 패턴들이 고유 주제별로 그룹화되어 지도 위에 표시된 원(주제)의 개수입니다.
+                  </span>
+                </span>
+                <span className="text-slate-500">·</span>
+                <span
+                  className="group/edge relative cursor-help underline decoration-slate-500/60 underline-offset-2 transition hover:text-blue-300"
+                  title="같은 웹페이지를 함께 보았거나 관련성이 높아 서로 이어진 노드 간 연결선 수입니다."
+                >
+                  {visibleEdges.length}개 연결
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-56 rounded-xl border border-white/15 bg-slate-950/95 p-2.5 text-[11px] font-normal leading-4 text-slate-200 shadow-2xl backdrop-blur-md group-hover/edge:block"
+                  >
+                    <span className="block font-bold text-blue-300 mb-0.5">관계 연결선 ({visibleEdges.length}개)</span>
+                    같은 웹페이지를 함께 살펴본 기록이 있거나 서로 연관된 관심사들 사이에 이어진 선의 개수입니다.
+                  </span>
+                </span>
+              </div>
               <p className="mt-0.5 text-slate-400">호버하면 연결이 드러납니다.</p>
             </div>
             <div className="absolute right-5 top-5 z-20 flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/80 p-1.5 shadow-xl shadow-black/20 backdrop-blur">
@@ -783,7 +816,7 @@ export default function UnconsciousMap({ candidates, selectedId, highlightedIds 
                     </g>
                   );
                 })}
-                {selectedNodeDetail && selectedNodePoint && <foreignObject x={popoverX} y={popoverY} width={popoverWidth} height={popoverHeight} pointerEvents="all"><div data-graph-popover="true" role="dialog" aria-label={`${selectedNodeDetail.label} 상세 정보`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="rounded-2xl border border-slate-200 bg-slate-950/95 p-3.5 text-slate-100 shadow-2xl shadow-black/45 backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[9px] font-extrabold tracking-[0.15em] text-blue-300">NODE DETAIL</p><h3 className="mt-1 truncate text-sm font-extrabold text-white">{selectedNodeDetail.label}</h3></div><button type="button" onClick={() => onClearHighlights?.()} aria-label={`${selectedNodeDetail.label} 상세 정보 닫기`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">방문 빈도</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.totalVisits}회</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">연결</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.connections.length}개</p></div><div className="rounded-lg bg-white/8 px-2 py-1.5"><p className="text-[9px] text-slate-400">신뢰도</p><p className="mt-0.5 text-[10px] font-bold text-white">{Math.round(selectedNodeDetail.confidence * 100)}%</p></div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">연결된 관심</p><div className="mt-1.5 flex flex-wrap gap-1">{selectedNodeDetail.connections.length ? selectedNodeDetail.connections.slice(0, 4).map((connection) => <span key={connection.label} className="rounded-full bg-blue-400/15 px-2 py-1 text-[9px] font-semibold text-blue-100">{connection.label} <span className="text-blue-300">{Math.round(connection.score * 100)}%</span></span>) : <span className="text-[10px] text-slate-400">직접 연결 없음</span>}</div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">탐색 근거</p><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-300">{selectedNodeDetail.candidates.flatMap((candidate) => candidate.evidence).find(Boolean) || '반복 탐색 기록을 근거로 확인되었습니다.'}</p></div>{onRequestRemove && <button type="button" aria-haspopup="dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRequestRemove(selectedNodeDetail); }} className="mt-3 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-rose-200 transition hover:bg-rose-400/15 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Trash2 className="h-3 w-3" aria-hidden="true" />지도에서 제거</button>}</div></foreignObject>}
+                {selectedNodeDetail && selectedNodePoint && <foreignObject x={popoverX} y={popoverY} width={popoverWidth} height={popoverHeight} pointerEvents="all"><div data-graph-popover="true" role="dialog" aria-label={`${selectedNodeDetail.label} 상세 정보`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="rounded-2xl border border-slate-200 bg-slate-950/95 p-3.5 text-slate-100 shadow-2xl shadow-black/45 backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[9px] font-extrabold tracking-[0.15em] text-blue-300">NODE DETAIL</p><h3 className="mt-1 truncate text-sm font-extrabold text-white">{selectedNodeDetail.label}</h3></div><button type="button" onClick={() => (onCloseDetail ? onCloseDetail() : onClearHighlights?.())} aria-label={`${selectedNodeDetail.label} 상세 정보 닫기`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><div className="group/stat relative cursor-help rounded-lg bg-white/8 px-2 py-1.5 transition hover:bg-white/12" title="이 관심 주제와 연관된 웹페이지들의 총 누적 방문 횟수입니다."><p className="text-[9px] text-slate-400">방문 빈도</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.totalVisits}회</p><div role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-36 -translate-x-1/2 rounded-lg border border-white/15 bg-slate-950/95 p-2 text-[10px] leading-3.5 text-slate-200 shadow-xl backdrop-blur-md group-hover/stat:block">이 관심 주제와 관련된 웹페이지들의 총 누적 방문 횟수입니다.</div></div><div className="group/stat relative cursor-help rounded-lg bg-white/8 px-2 py-1.5 transition hover:bg-white/12" title="이 노드와 직접 연결된 다른 관심 노드의 개수입니다."><p className="text-[9px] text-slate-400">연결</p><p className="mt-0.5 text-[10px] font-bold text-white">{selectedNodeDetail.connections.length}개</p><div role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-36 -translate-x-1/2 rounded-lg border border-white/15 bg-slate-950/95 p-2 text-[10px] leading-3.5 text-slate-200 shadow-xl backdrop-blur-md group-hover/stat:block">이 노드와 직접 이어진 다른 관심 주제의 개수입니다.</div></div><div className="group/stat relative cursor-help rounded-lg bg-white/8 px-2 py-1.5 transition hover:bg-white/12" title="반복 탐색 기록과 연결성을 바탕으로 AI가 추정한 신뢰도 비율입니다."><p className="text-[9px] text-slate-400">신뢰도</p><p className="mt-0.5 text-[10px] font-bold text-white">{Math.round(selectedNodeDetail.confidence * 100)}%</p><div role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-36 -translate-x-1/2 rounded-lg border border-white/15 bg-slate-950/95 p-2 text-[10px] leading-3.5 text-slate-200 shadow-xl backdrop-blur-md group-hover/stat:block">반복 방문 패턴을 근거로 산출한 신뢰도입니다.</div></div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">연결된 관심</p><div className="mt-1.5 flex flex-wrap gap-1">{selectedNodeDetail.connections.length ? selectedNodeDetail.connections.slice(0, 4).map((connection) => <span key={connection.label} className="rounded-full bg-blue-400/15 px-2 py-1 text-[9px] font-semibold text-blue-100">{connection.label} <span className="text-blue-300">{Math.round(connection.score * 100)}%</span></span>) : <span className="text-[10px] text-slate-400">직접 연결 없음</span>}</div></div><div className="mt-3"><p className="text-[10px] font-bold text-slate-200">탐색 근거</p><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-300">{selectedNodeDetail.candidates.flatMap((candidate) => candidate.evidence).find(Boolean) || '반복 탐색 기록을 근거로 확인되었습니다.'}</p></div>{onRequestRemove && <button type="button" aria-haspopup="dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRequestRemove(selectedNodeDetail); }} className="mt-3 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-rose-200 transition hover:bg-rose-400/15 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Trash2 className="h-3 w-3" aria-hidden="true" />지도에서 제거</button>}</div></foreignObject>}
               </g>
             </svg>
             {visibleEdges.length === 0 && <p className="pointer-events-none absolute bottom-7 left-1/2 w-full max-w-md -translate-x-1/2 px-6 text-center text-xs leading-5 text-slate-500">아직 함께 살펴본 흔적이 충분하지 않아 독립적으로 보입니다. 같은 페이지를 함께 살펴본 기록이 쌓이면 연결선이 나타납니다.</p>}
